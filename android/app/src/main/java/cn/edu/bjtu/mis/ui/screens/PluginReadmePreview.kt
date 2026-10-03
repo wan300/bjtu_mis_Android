@@ -11,12 +11,17 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
@@ -27,15 +32,20 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import cn.edu.bjtu.mis.data.thirdparty.ThirdPartyServiceImportPreview
 import cn.edu.bjtu.mis.ui.components.LoadState
 import okhttp3.Authenticator
 import okhttp3.CookieJar
@@ -49,9 +59,17 @@ private const val PluginReadmeDocumentOrigin = "https://plugin-readme.invalid/"
 private const val PluginReadmeDocumentHost = "plugin-readme.invalid"
 private const val PluginReadmeMaxImageBytes = 3L * 1024L * 1024L
 
+internal data class PluginReadmeTarget(
+    val title: String,
+    val owner: String,
+    val repository: String,
+    val commitSha: String,
+    val requirements: List<String> = emptyList(),
+)
+
 @Composable
 internal fun PluginReadmePreviewDialog(
-    preview: ThirdPartyServiceImportPreview,
+    target: PluginReadmeTarget,
     state: LoadState<String?>,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
@@ -68,43 +86,77 @@ internal fun PluginReadmePreviewDialog(
             shape = MaterialTheme.shapes.medium,
             tonalElevation = 6.dp,
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 20.dp, top = 14.dp, end = 8.dp, bottom = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("README", style = MaterialTheme.typography.titleLarge)
-                        Text(
-                            "${preview.githubOwner}/${preview.githubRepo}@${preview.commitSha.take(8)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val requirementsMaxHeight = maxHeight * 0.3f
+                Column(modifier = Modifier.fillMaxSize()) {
+                    var showRequirements by remember(target.owner, target.repository, target.commitSha) {
+                        mutableStateOf(false)
                     }
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Filled.Close, contentDescription = "关闭 README 预览")
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, top = 14.dp, end = 8.dp, bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                target.title,
+                                style = MaterialTheme.typography.titleLarge,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                "${target.owner}/${target.repository}@${target.commitSha.take(8)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Filled.Close, contentDescription = "关闭 README 预览")
+                        }
                     }
-                }
-                HorizontalDivider()
-                when (state) {
-                    LoadState.Loading -> PluginReadmeLoading()
-                    is LoadState.Error -> PluginReadmeError(state.message, onRetry)
-                    is LoadState.Data -> {
-                        val markdown = state.value
-                        if (markdown == null) {
-                            PluginReadmeEmpty()
-                        } else {
-                            val html = remember(markdown, preview.githubOwner, preview.githubRepo, preview.commitSha) {
-                                renderPluginReadmeHtml(
-                                    markdown = markdown,
-                                    owner = preview.githubOwner,
-                                    repository = preview.githubRepo,
-                                    commitSha = preview.commitSha,
-                                )
+                    HorizontalDivider()
+                    if (target.requirements.isNotEmpty()) {
+                        TextButton(
+                            onClick = { showRequirements = !showRequirements },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(if (showRequirements) "收起权限与运行要求" else "展开权限与运行要求") }
+                        if (showRequirements) {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = requirementsMaxHeight)
+                                    .testTag("plugin-readme-requirements"),
+                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp),
+                            ) {
+                                items(target.requirements) { Text(it, style = MaterialTheme.typography.bodySmall) }
                             }
-                            PluginReadmeWebView(html = html)
+                        }
+                    }
+                    Box(
+                        modifier = Modifier.weight(1f).fillMaxWidth().testTag("plugin-readme-content"),
+                    ) {
+                        when (state) {
+                            LoadState.Loading -> PluginReadmeLoading()
+                            is LoadState.Error -> PluginReadmeError(state.message, onRetry)
+                            is LoadState.Data -> {
+                                val markdown = state.value
+                                if (markdown == null) {
+                                    PluginReadmeEmpty()
+                                } else {
+                                    val html = remember(markdown, target.owner, target.repository, target.commitSha) {
+                                        renderPluginReadmeHtml(
+                                            markdown = markdown,
+                                            owner = target.owner,
+                                            repository = target.repository,
+                                            commitSha = target.commitSha,
+                                        )
+                                    }
+                                    PluginReadmeWebView(html = html)
+                                }
+                            }
                         }
                     }
                 }

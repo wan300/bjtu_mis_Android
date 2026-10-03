@@ -103,9 +103,15 @@ class ThirdPartyServiceRepository(
         }
     }
 
-    suspend fun commitPreparedImport(token: String): ThirdPartyServiceInstallResult {
+    suspend fun commitPreparedImport(
+        token: String,
+        reviewedOrigins: ThirdPartyOriginDeclaration? = null,
+    ): ThirdPartyServiceInstallResult {
         val prepared = installer.preparedPackage(token)
             ?: throw ThirdPartyServiceException("插件预检包已失效，请重新导入")
+        if (reviewedOrigins != null && reviewedOrigins != prepared.manifest.origins) {
+            throw ThirdPartyServiceException("已确认的 Origin 与预检包不一致，请重新审阅")
+        }
         val existing = dao.getService(prepared.manifest.id)
         validateReplacement(prepared, existing)
         val previousManifest = existing?.let { runCatching { AppJson.decodeFromString<ThirdPartyServiceManifest>(it.manifestJson) }.getOrNull() }
@@ -170,15 +176,20 @@ class ThirdPartyServiceRepository(
         }.orEmpty()
         val preservedCapabilities =
             previousService?.grantedCapabilities.orEmpty() intersect declaredCapabilities
-        val requiresSecurityReview = previousService == null ||
-            previousService.needsReview ||
-            existing?.runtimeProfile != ThirdPartyRuntimeProfile.ContractV1.value ||
-            (installed.manifest.requiredCapabilities.toSet() - previousDeclaredCapabilities).isNotEmpty() ||
-            (declaredCapabilities - previousDeclaredCapabilities).isNotEmpty() ||
-            (previousDeclaredCapabilities.filter { it.startsWith("android.") }.toSet() -
-                declaredCapabilities).isNotEmpty() ||
-            (installed.manifest.remoteOrigins.toSet() -
-                previousService?.manifest?.remoteOrigins.orEmpty().toSet()).isNotEmpty()
+        val addedOriginPolicies = addedThirdPartyOriginPolicies(
+            previousService?.manifest?.origins ?: ThirdPartyOriginDeclaration(),
+            installed.manifest.origins,
+        )
+        val requiresSecurityReview = previousService == null || requiresThirdPartyUpdateConfirmation(
+            ThirdPartyUpdateReviewInput(
+                existingNeedsReview = previousService?.needsReview == true,
+                existingRuntimeProfile = existing?.runtimeProfile,
+                addedRequiredCapabilities = installed.manifest.requiredCapabilities.toSet() - previousDeclaredCapabilities,
+                addedOptionalCapabilities = installed.manifest.optionalCapabilities.toSet() - previousDeclaredCapabilities,
+                removedAndroidCapabilities = previousDeclaredCapabilities.filter { it.startsWith("android.") }.toSet() - declaredCapabilities,
+                addedOrigins = if (reviewedOrigins == null) addedOriginPolicies.all.toSet() else emptySet(),
+            ),
+        )
         val entity = installed.toEntity(
             existing = existing,
             now = now,
@@ -215,7 +226,8 @@ class ThirdPartyServiceRepository(
             installed.manifest.id,
             setOfNotNull(installed.commitSha, existing?.commitSha),
         )
-        if (previousService != null && (requiresSecurityReview || !entity.enabled)) {
+        if (previousService != null &&
+            (requiresSecurityReview || !entity.enabled || addedOriginPolicies.all.isNotEmpty())) {
             revokeAllAndroidAutomation(
                 previousService.publisherSubjectId,
                 previousService.serviceId,
@@ -282,6 +294,15 @@ class ThirdPartyServiceRepository(
         readmeCacheMutex.withLock {
             readmeCache[key] = ReadmeCacheValue(readme)
         }
+        return readme
+    }
+
+    suspend fun loadCatalogPluginReadme(plugin: CatalogPlugin): String? {
+        val source = ThirdPartyServiceInstaller.parseGitHubRepositoryUrl(plugin.repositoryUrl)
+        val key = ReadmeCacheKey(source.owner, source.repo, plugin.commitSha)
+        readmeCacheMutex.withLock { readmeCache[key]?.let { return it.markdown } }
+        val readme = installer.fetchReadme(source, plugin.commitSha)
+        readmeCacheMutex.withLock { readmeCache[key] = ReadmeCacheValue(readme) }
         return readme
     }
 
@@ -573,8 +594,7 @@ class ThirdPartyServiceRepository(
         val previous = existing?.toModel()
         val previousRequired = previous?.manifest?.requiredCapabilities.orEmpty().toSet()
         val previousOptional = previous?.manifest?.optionalCapabilities.orEmpty().toSet()
-        val previousOrigins = previous?.manifest?.remoteOrigins.orEmpty().toSet()
-        val nextOrigins = manifest.remoteOrigins.toSet()
+        val previousOrigins = previous?.manifest?.origins ?: ThirdPartyOriginDeclaration()
         return ThirdPartyServiceImportPreview(
             token = token,
             manifest = manifest,
@@ -601,8 +621,8 @@ class ThirdPartyServiceRepository(
                 (previousRequired + previousOptional) -
                     (manifest.requiredCapabilities + manifest.optionalCapabilities).toSet()
                 ).sorted(),
-            addedOrigins = (nextOrigins - previousOrigins).sorted(),
-            removedOrigins = (previousOrigins - nextOrigins).sorted(),
+            addedOrigins = addedThirdPartyOriginPolicies(previousOrigins, manifest.origins).all.sorted(),
+            removedOrigins = addedThirdPartyOriginPolicies(manifest.origins, previousOrigins).all.sorted(),
         )
     }
 

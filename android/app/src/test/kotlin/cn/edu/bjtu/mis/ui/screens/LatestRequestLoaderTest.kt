@@ -12,6 +12,56 @@ import org.junit.Test
 
 class LatestRequestLoaderTest {
     @Test
+    fun dismissingReadmeInvalidatesThePendingResponse() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val finished = CompletableDeferred<Unit>()
+        val results = mutableListOf<String>()
+        val loader = LatestRequestLoader<String>(this) { results += it.getOrThrow() }
+        loader.load {
+            started.complete(Unit)
+            release.await()
+            finished.complete(Unit)
+            "dismissed README"
+        }
+        started.await()
+        loader.invalidate()
+        release.complete(Unit)
+        finished.await()
+        yield()
+
+        assertEquals(emptyList<String>(), results)
+    }
+
+    @Test
+    fun reopenedReadmeCannotBeOverwrittenByItsEarlierRequest() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val finished = CompletableDeferred<Unit>()
+        val published = CompletableDeferred<Unit>()
+        val results = mutableListOf<String>()
+        val loader = LatestRequestLoader<String>(this) {
+            results += it.getOrThrow()
+            published.complete(Unit)
+        }
+        loader.load {
+            started.complete(Unit)
+            release.await()
+            finished.complete(Unit)
+            "old README"
+        }
+        started.await()
+        loader.invalidate()
+        loader.load { "current README" }
+        published.await()
+        release.complete(Unit)
+        finished.await()
+        yield()
+
+        assertEquals(listOf("current README"), results)
+    }
+
+    @Test
     fun repeatedQueryCanShareTheInFlightRepositoryRequest() = runBlocking {
         val started = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()

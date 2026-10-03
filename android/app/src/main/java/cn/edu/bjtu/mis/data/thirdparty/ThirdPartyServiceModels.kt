@@ -255,6 +255,30 @@ data class ThirdPartyServiceImportPreview(
     val addedOrigins: List<String> = emptyList(),
     val removedOrigins: List<String> = emptyList(),
 ) {
+    val addedOriginPolicies: ThirdPartyOriginDeclaration
+        get() = addedThirdPartyOriginPolicies(
+            previousService?.manifest?.origins ?: ThirdPartyOriginDeclaration(),
+            manifest.origins,
+        )
+
+    val removedOriginPolicies: ThirdPartyOriginDeclaration
+        get() = addedThirdPartyOriginPolicies(
+            manifest.origins,
+            previousService?.manifest?.origins ?: ThirdPartyOriginDeclaration(),
+        )
+
+    val requiresUserConfirmation: Boolean
+        get() = !updatedExisting || requiresThirdPartyUpdateConfirmation(
+            ThirdPartyUpdateReviewInput(
+                existingNeedsReview = previousService?.needsReview == true,
+                existingRuntimeProfile = previousService?.runtimeProfile,
+                addedRequiredCapabilities = addedRequiredCapabilities.toSet(),
+                addedOptionalCapabilities = addedOptionalCapabilities.toSet(),
+                removedAndroidCapabilities = removedCapabilities.filter { it.startsWith("android.") }.toSet(),
+                addedOrigins = addedOriginPolicies.all.toSet(),
+            ),
+        )
+
     val addedRequiredPermissions: List<String>
         get() = ThirdPartyCapabilityRegistry.permissionsFor(addedRequiredCapabilities).sorted()
 

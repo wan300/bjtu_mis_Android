@@ -42,6 +42,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -83,6 +84,7 @@ import cn.edu.bjtu.mis.data.thirdparty.ThirdPartyCatalogRepository
 import cn.edu.bjtu.mis.data.thirdparty.ThirdPartyService
 import cn.edu.bjtu.mis.data.thirdparty.ThirdPartyServiceApiRegistry
 import cn.edu.bjtu.mis.data.thirdparty.ThirdPartyServiceImportPreview
+import cn.edu.bjtu.mis.data.thirdparty.ThirdPartyOriginDeclaration
 import cn.edu.bjtu.mis.data.thirdparty.ThirdPartyServiceRepository
 import cn.edu.bjtu.mis.data.thirdparty.ThirdPartyServiceSandbox
 import cn.edu.bjtu.mis.data.thirdparty.ThirdPartyWebViewAccessPolicy
@@ -120,9 +122,28 @@ fun ThirdPartyServicesScreen(
     var githubUrl by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var updateProgress by remember { mutableStateOf<String?>(null) }
     var pendingPreview by remember { mutableStateOf<ThirdPartyServiceImportPreview?>(null) }
     var readmePreview by remember { mutableStateOf<ThirdPartyServiceImportPreview?>(null) }
     var readmeState by remember { mutableStateOf<LoadState<String?>>(LoadState.Loading) }
+    val readmeLoader = remember(scope, repository) {
+        LatestRequestLoader<String?>(scope) { result ->
+            readmeState = result.fold(
+                onSuccess = { LoadState.Data(it) },
+                onFailure = { LoadState.Error(it.message ?: "GitHub README 暂时不可用") },
+            )
+        }
+    }
+    var selectedCatalog by remember { mutableStateOf<CatalogPlugin?>(null) }
+    var catalogReadmeState by remember { mutableStateOf<LoadState<String?>>(LoadState.Loading) }
+    val catalogReadmeLoader = remember(scope, repository) {
+        LatestRequestLoader<String?>(scope) { result ->
+            catalogReadmeState = result.fold(
+                onSuccess = { LoadState.Data(it) },
+                onFailure = { LoadState.Error(it.message ?: "README 暂时不可用") },
+            )
+        }
+    }
     val runtimeEnvironment = rememberPluginWebViewRuntimeEnvironment()
 
     fun load() {
@@ -153,12 +174,34 @@ fun ThirdPartyServicesScreen(
         scope.launch {
             busy = true
             message = null
+            updateProgress = "正在下载并校验更新…"
             runCatching { repository.prepareImportFromGitHub(url) }
-                .onSuccess {
-                    pendingPreview = it
-                    message = "预检完成，请确认 Capability 和允许来源"
+                .onSuccess { preview ->
+                    if (preview.requiresUserConfirmation) {
+                        pendingPreview = preview
+                        updateProgress = null
+                        message = if (preview.updatedExisting) {
+                            "检测到权限或安全边界变化，请确认增量风险"
+                        } else {
+                            "预检完成，请确认 Capability 和允许来源"
+                        }
+                    } else {
+                        updateProgress = "正在安装更新…"
+                        runCatching { repository.commitPreparedImport(preview.token) }
+                            .onSuccess { result ->
+                                githubUrl = ""
+                                readmePreview = null
+                                message = if (result.updatedExisting) "已完成更新" else "已导入服务，请打开后确认 Capability"
+                                load()
+                            }
+                            .onFailure { message = it.message ?: "安装失败" }
+                        updateProgress = null
+                    }
                 }
-                .onFailure { message = it.message ?: "预检失败" }
+                .onFailure {
+                    updateProgress = null
+                    message = it.message ?: "预检失败"
+                }
             busy = false
         }
     }
@@ -167,12 +210,34 @@ fun ThirdPartyServicesScreen(
         scope.launch {
             busy = true
             message = null
+            updateProgress = if (plugin.updateAvailable) "正在下载并校验更新…" else "正在下载并校验插件…"
             runCatching { repository.prepareInstallFromCatalog(plugin) }
                 .onSuccess {
-                    pendingPreview = it
-                    message = "平台快照和双重 digest 校验完成，请确认安装风险"
+                    if (it.requiresUserConfirmation) {
+                        pendingPreview = it
+                        updateProgress = null
+                        message = if (it.updatedExisting) {
+                            "检测到权限或安全边界变化，请确认增量风险"
+                        } else {
+                            "平台快照和双重 digest 校验完成，请确认安装风险"
+                        }
+                    } else {
+                        updateProgress = "正在安装更新…"
+                        runCatching { repository.commitPreparedImport(it.token) }
+                            .onSuccess { result ->
+                                githubUrl = ""
+                                readmePreview = null
+                                message = if (result.updatedExisting) "已完成更新" else "已导入服务，请打开后确认 Capability"
+                                load()
+                            }
+                            .onFailure { message = it.message ?: "安装失败" }
+                        updateProgress = null
+                    }
                 }
-                .onFailure { message = it.message ?: "平台快照预检失败" }
+                .onFailure {
+                    updateProgress = null
+                    message = it.message ?: "平台快照预检失败"
+                }
             busy = false
         }
     }
@@ -181,48 +246,55 @@ fun ThirdPartyServicesScreen(
         scope.launch {
             busy = true
             message = null
-            runCatching { repository.commitPreparedImport(preview.token) }
+            updateProgress = if (preview.updatedExisting) "正在安装更新…" else "正在安装插件…"
+            runCatching {
+                repository.commitPreparedImport(
+                    preview.token,
+                    reviewedOrigins = preview.manifest.origins.takeIf { preview.updatedExisting },
+                )
+            }
                 .onSuccess {
                     githubUrl = ""
                     pendingPreview = null
                     readmePreview = null
-                    message = if (it.updatedExisting) {
-                        "已更新服务，请重新确认 Capability"
+                    message = if (it.updatedExisting && it.service.needsReview) {
+                        "已更新，请完成 Capability 授权"
+                    } else if (it.updatedExisting) {
+                        "已完成更新"
                     } else {
                         "已导入服务，请打开后确认 Capability"
                     }
                     load()
                 }
                 .onFailure { message = it.message ?: "导入失败" }
+            updateProgress = null
             busy = false
         }
     }
 
     fun cancelPreview(preview: ThirdPartyServiceImportPreview) {
         repository.discardPreparedImport(preview.token)
-        if (readmePreview?.token == preview.token) readmePreview = null
+        if (readmePreview?.token == preview.token) {
+            readmeLoader.invalidate()
+            readmePreview = null
+        }
         pendingPreview = null
         message = "已取消导入"
     }
 
     fun loadReadme(preview: ThirdPartyServiceImportPreview) {
         readmeState = LoadState.Loading
-        scope.launch {
-            runCatching { repository.loadPreparedImportReadme(preview) }
-                .onSuccess {
-                    if (readmePreview?.token == preview.token) readmeState = LoadState.Data(it)
-                }
-                .onFailure {
-                    if (readmePreview?.token == preview.token) {
-                        readmeState = LoadState.Error(it.message ?: "GitHub README 暂时不可用")
-                    }
-                }
-        }
+        readmeLoader.load { repository.loadPreparedImportReadme(preview) }
     }
 
     fun showReadme(preview: ThirdPartyServiceImportPreview) {
         readmePreview = preview
         loadReadme(preview)
+    }
+
+    fun loadCatalogReadme(plugin: CatalogPlugin) {
+        catalogReadmeState = LoadState.Loading
+        catalogReadmeLoader.load { repository.loadCatalogPluginReadme(plugin) }
     }
 
     LaunchedEffect(Unit) {
@@ -261,6 +333,14 @@ fun ThirdPartyServicesScreen(
                 }
                 Button(onClick = { showInstalled = true }, enabled = !showInstalled, modifier = Modifier.weight(1f)) {
                     Text("已安装")
+                }
+            }
+        }
+        updateProgress?.let { phase ->
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(phase, style = MaterialTheme.typography.bodySmall)
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
             }
         }
@@ -310,6 +390,10 @@ fun ThirdPartyServicesScreen(
                             installed = (servicesState as? LoadState.Data<List<ThirdPartyService>>)?.value?.any { it.serviceId == plugin.id } == true,
                             busy = busy,
                             onInstall = { prepareCatalogInstall(plugin) },
+                            onDetails = {
+                                selectedCatalog = plugin
+                                loadCatalogReadme(plugin)
+                            },
                         )
                     }
                 }
@@ -422,10 +506,39 @@ fun ThirdPartyServicesScreen(
 
     readmePreview?.let { preview ->
         PluginReadmePreviewDialog(
-            preview = preview,
+            target = PluginReadmeTarget(preview.manifest.name, preview.githubOwner, preview.githubRepo, preview.commitSha),
             state = readmeState,
             onRetry = { loadReadme(preview) },
-            onDismiss = { readmePreview = null },
+            onDismiss = {
+                readmeLoader.invalidate()
+                readmePreview = null
+            },
+        )
+    }
+    selectedCatalog?.let { plugin ->
+        val repositoryPath = plugin.repositoryUrl.substringAfter("github.com/").trimEnd('/').split('/')
+        PluginReadmePreviewDialog(
+            target = PluginReadmeTarget(
+                title = "${plugin.name} · README",
+                owner = repositoryPath.getOrNull(0).orEmpty(),
+                repository = repositoryPath.getOrNull(1).orEmpty(),
+                commitSha = plugin.commitSha,
+                requirements = buildList {
+                    add("必需权限：${plugin.permissions.required.joinToString().ifBlank { "无" }}")
+                    add("可选权限：${plugin.permissions.optional.joinToString().ifBlank { "无" }}")
+                    add("Connect：${plugin.connectOrigins.joinToString().ifBlank { "无" }}")
+                    add("Media：${plugin.mediaOrigins.joinToString().ifBlank { "无" }}")
+                    add("Frame：${plugin.frameOrigins.joinToString().ifBlank { "无" }}")
+                    add("Navigation：${plugin.navigationOrigins.joinToString().ifBlank { "无" }}")
+                    if (plugin.configuration.isNotEmpty()) add("配置：${plugin.configuration.joinToString { it.label }}")
+                },
+            ),
+            state = catalogReadmeState,
+            onRetry = { loadCatalogReadme(plugin) },
+            onDismiss = {
+                catalogReadmeLoader.invalidate()
+                selectedCatalog = null
+            },
         )
     }
 }
@@ -436,6 +549,7 @@ private fun CatalogPluginCard(
     installed: Boolean,
     busy: Boolean,
     onInstall: () -> Unit,
+    onDetails: () -> Unit,
 ) {
     InfoCard(
         title = plugin.name,
@@ -472,28 +586,14 @@ private fun CatalogPluginCard(
             "Publisher：${plugin.publisherSubjectId.ifBlank { "未知" }} · ${plugin.verificationLevel}",
             style = MaterialTheme.typography.bodySmall,
         )
-        CapabilitySummary("Required capabilities", plugin.requiredCapabilities)
-        if (plugin.optionalCapabilities.isNotEmpty()) {
-            CapabilitySummary("Optional capabilities（默认关闭）", plugin.optionalCapabilities)
-        }
-        OriginPolicySummary(
-            connect = plugin.connectOrigins,
-            media = plugin.mediaOrigins,
-            frame = plugin.frameOrigins,
-            navigation = plugin.navigationOrigins,
-            bridge = plugin.bridgeOrigins,
-        )
-        if (plugin.configuration.isNotEmpty()) {
-            Text(
-                "配置：${plugin.configuration.joinToString { "${it.label}${if (it.required) "（必填）" else ""}" }}",
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
         plugin.validationWarnings.forEach { warning ->
             Text(warning, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
-        Button(onClick = onInstall, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-            Text(if (installed) "下载并比较更新" else "下载并预检")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = onDetails, enabled = !busy, modifier = Modifier.weight(1f)) { Text("查看详情") }
+            Button(onClick = onInstall, enabled = !busy, modifier = Modifier.weight(1f)) {
+                Text(if (installed) "更新" else "安装")
+            }
         }
     }
 }
@@ -549,34 +649,40 @@ private fun ThirdPartyImportPreviewCard(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        CapabilitySummary("Required capabilities", preview.manifest.requiredCapabilities)
-        if (preview.manifest.optionalCapabilities.isNotEmpty()) {
-            CapabilitySummary(
-                "Optional capabilities（首次安装默认关闭）",
-                preview.manifest.optionalCapabilities,
-            )
+        if (!preview.updatedExisting) {
+            CapabilitySummary("Required capabilities", preview.manifest.requiredCapabilities)
+            if (preview.manifest.optionalCapabilities.isNotEmpty()) {
+                CapabilitySummary(
+                    "Optional capabilities（首次安装默认关闭）",
+                    preview.manifest.optionalCapabilities,
+                )
+            }
         }
         Text(
             "Publisher：${preview.publisherSubjectId} · ${preview.verificationLevel}",
             style = MaterialTheme.typography.bodySmall,
         )
         if (preview.updatedExisting) {
-            CapabilitySummary("新增 required capabilities", preview.addedRequiredCapabilities)
-            CapabilitySummary(
-                "新增 optional capabilities（更新后保持关闭）",
-                preview.addedOptionalCapabilities,
+            if (preview.addedRequiredCapabilities.isNotEmpty()) {
+                CapabilitySummary("新增 required capabilities", preview.addedRequiredCapabilities)
+            }
+            if (preview.addedOptionalCapabilities.isNotEmpty()) {
+                CapabilitySummary("新增 optional capabilities（更新后保持关闭）", preview.addedOptionalCapabilities)
+            }
+            if (preview.removedCapabilities.isNotEmpty()) {
+                CapabilitySummary("将自动撤销的 capabilities", preview.removedCapabilities)
+            }
+            OriginChangesSummary("新增", preview.addedOriginPolicies)
+            OriginChangesSummary("移除", preview.removedOriginPolicies)
+        } else {
+            OriginPolicySummary(
+                connect = preview.manifest.connectOrigins,
+                media = preview.manifest.mediaOrigins,
+                frame = preview.manifest.frameOrigins,
+                navigation = preview.manifest.navigationOrigins,
+                bridge = preview.manifest.bridgeOrigins,
             )
-            CapabilitySummary("将自动撤销的 capabilities", preview.removedCapabilities)
-            ValueSummary("新增 origin", preview.addedOrigins)
-            ValueSummary("移除 origin", preview.removedOrigins)
         }
-        OriginPolicySummary(
-            connect = preview.manifest.connectOrigins,
-            media = preview.manifest.mediaOrigins,
-            frame = preview.manifest.frameOrigins,
-            navigation = preview.manifest.navigationOrigins,
-            bridge = preview.manifest.bridgeOrigins,
-        )
         OutlinedButton(onClick = onShowReadme, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
             Text("查看 README")
         }
@@ -628,6 +734,18 @@ private fun ValueSummary(title: String, values: List<String>) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun OriginChangesSummary(title: String, origins: ThirdPartyOriginDeclaration) {
+    listOf(
+        "Connect（网络请求）" to origins.connect,
+        "Media（图片与媒体）" to origins.media,
+        "Frame（嵌入页面）" to origins.frame,
+        "Navigation（外部导航）" to origins.navigation,
+    ).forEach { (purpose, values) ->
+        if (values.isNotEmpty()) ValueSummary("$title $purpose", values)
     }
 }
 

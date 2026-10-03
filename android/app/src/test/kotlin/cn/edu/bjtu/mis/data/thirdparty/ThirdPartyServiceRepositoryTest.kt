@@ -80,6 +80,148 @@ class ThirdPartyServiceRepositoryTest {
     }
 
     @Test
+    fun sameDomainWithNewOriginPurposeRequiresReviewInPreviewAndCommit() = runBlocking {
+        MockWebServer().use { server ->
+            val dao = FakeThirdPartyServiceDao()
+            dao.saved["bjtu.demo"] = existingAuthorizedEntity().copy(
+                manifestJson = validManifest(
+                    origins = ThirdPartyOriginDeclaration(media = listOf("https://api.example.com")),
+                ),
+            )
+            val repository = repository(server, dao)
+            enqueueGithubPackage(server)
+
+            val preview = repository.prepareImportFromGitHub("https://github.com/alice/demo")
+            assertTrue("A new connect use of an existing media domain needs review", preview.requiresUserConfirmation)
+
+            val result = repository.commitPreparedImport(preview.token)
+            assertTrue(result.service.needsReview)
+            assertFalse(result.service.enabled)
+        }
+    }
+
+    @Test
+    fun removingOriginPurposeDoesNotRequireConfirmation() = runBlocking {
+        MockWebServer().use { server ->
+            val dao = FakeThirdPartyServiceDao()
+            dao.saved["bjtu.demo"] = existingAuthorizedEntity()
+            val repository = repository(server, dao)
+            enqueueGithubPackage(server, manifest = validManifest(origins = ThirdPartyOriginDeclaration()))
+
+            val preview = repository.prepareImportFromGitHub("https://github.com/alice/demo")
+            assertFalse(preview.requiresUserConfirmation)
+            val result = repository.commitPreparedImport(preview.token)
+            assertFalse(result.service.needsReview)
+            assertTrue(result.service.enabled)
+        }
+    }
+
+    @Test
+    fun reviewedOriginOnlyUpdateRemainsEnabledWithoutAnotherGrant() = runBlocking {
+        MockWebServer().use { server ->
+            val dao = FakeThirdPartyServiceDao()
+            val existing = existingAuthorizedEntity().copy(
+                manifestJson = validManifest(origins = ThirdPartyOriginDeclaration(
+                    media = listOf("https://api.example.com"),
+                )),
+            )
+            dao.saved["bjtu.demo"] = existing
+            val repository = repository(server, dao)
+            enqueueGithubPackage(server)
+
+            val preview = repository.prepareImportFromGitHub("https://github.com/alice/demo")
+            assertTrue(preview.requiresUserConfirmation)
+            val updated = repository.commitPreparedImport(
+                preview.token,
+                reviewedOrigins = preview.manifest.origins,
+            ).service
+
+            assertTrue(updated.enabled)
+            assertFalse(updated.needsReview)
+            assertEquals(setOf("runtime.lifecycle@1", "identity.profile@1"), updated.grantedCapabilities)
+        }
+    }
+
+    @Test
+    fun originConfirmationMustMatchThePreparedPackage() = runBlocking {
+        MockWebServer().use { server ->
+            val dao = FakeThirdPartyServiceDao()
+            val existing = existingAuthorizedEntity()
+            dao.saved["bjtu.demo"] = existing
+            val repository = repository(server, dao)
+            enqueueGithubPackage(server)
+            val preview = repository.prepareImportFromGitHub("https://github.com/alice/demo")
+
+            val result = runCatching {
+                repository.commitPreparedImport(preview.token, reviewedOrigins = ThirdPartyOriginDeclaration())
+            }
+
+            assertTrue(result.exceptionOrNull() is ThirdPartyServiceException)
+            assertEquals(existing, dao.saved["bjtu.demo"])
+        }
+    }
+
+    @Test
+    fun confirmingOriginsDoesNotAuthorizeNewCapabilities() = runBlocking {
+        MockWebServer().use { server ->
+            val dao = FakeThirdPartyServiceDao()
+            dao.saved["bjtu.demo"] = existingAuthorizedEntity()
+            val repository = repository(server, dao)
+            enqueueGithubPackage(server, manifest = validManifest(
+                extraOptionalCapabilities = listOf("android.device.info@1"),
+            ))
+            val preview = repository.prepareImportFromGitHub("https://github.com/alice/demo")
+
+            val updated = repository.commitPreparedImport(
+                preview.token,
+                reviewedOrigins = preview.manifest.origins,
+            ).service
+
+            assertTrue(updated.needsReview)
+            assertFalse(updated.enabled)
+            assertFalse("android.device.info@1" in updated.grantedCapabilities)
+        }
+    }
+
+    @Test
+    fun originConfirmationDoesNotBypassAnExistingReview() = runBlocking {
+        MockWebServer().use { server ->
+            val dao = FakeThirdPartyServiceDao()
+            dao.saved["bjtu.demo"] = existingAuthorizedEntity().copy(needsReview = true, enabled = false)
+            val repository = repository(server, dao)
+            enqueueGithubPackage(server)
+            val preview = repository.prepareImportFromGitHub("https://github.com/alice/demo")
+
+            val updated = repository.commitPreparedImport(
+                preview.token,
+                reviewedOrigins = preview.manifest.origins,
+            ).service
+
+            assertTrue(updated.needsReview)
+            assertFalse(updated.enabled)
+        }
+    }
+
+    @Test
+    fun originConfirmationDoesNotAuthorizeAFirstInstall() = runBlocking {
+        MockWebServer().use { server ->
+            val dao = FakeThirdPartyServiceDao()
+            val repository = repository(server, dao)
+            enqueueGithubPackage(server)
+            val preview = repository.prepareImportFromGitHub("https://github.com/alice/demo")
+
+            val installed = repository.commitPreparedImport(
+                preview.token,
+                reviewedOrigins = preview.manifest.origins,
+            ).service
+
+            assertTrue(installed.needsReview)
+            assertFalse(installed.enabled)
+            assertTrue(installed.grantedCapabilities.isEmpty())
+        }
+    }
+
+    @Test
     fun listServicesRemovesObsoleteBundledServicesThatAreNoLongerShipped() = runBlocking {
         MockWebServer().use { server ->
             val dao = FakeThirdPartyServiceDao()
@@ -568,6 +710,9 @@ class ThirdPartyServiceRepositoryTest {
         migrationEntrypoint: String? = null,
         configuration: List<ThirdPartyConfigurationDefinition> = emptyList(),
         extraOptionalCapabilities: List<String> = emptyList(),
+        origins: ThirdPartyOriginDeclaration = ThirdPartyOriginDeclaration(
+            connect = listOf("https://api.example.com"),
+        ),
     ): String =
         AppJson.encodeToString(
             ThirdPartyServiceManifest(
@@ -586,9 +731,7 @@ class ThirdPartyServiceRepositoryTest {
                             extraOptionalCapabilities
                         ).distinct(),
                 ),
-                origins = ThirdPartyOriginDeclaration(
-                    connect = listOf("https://api.example.com"),
-                ),
+                origins = origins,
                 dataSchemaVersion = dataSchemaVersion,
                 migrationEntrypoint = migrationEntrypoint,
                 configuration = configuration,

@@ -12,6 +12,10 @@ internal class LatestRequestLoader<T>(
 ) {
     private var version = 0L
 
+    fun invalidate() {
+        version++
+    }
+
     // Keep shared repository requests alive; only the latest UI request may publish.
     fun load(block: suspend () -> T) {
         val requestVersion = ++version
