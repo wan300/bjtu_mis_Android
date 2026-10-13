@@ -70,6 +70,8 @@
 - 2026-10-13：已卸载本次新安装的 cn.edu.bjtu.mis.debug.test 和 cn.edu.bjtu.mis.debug，清理本次合成数据、测试插件/提醒和系统通知设置；pm list packages 确认正式 cn.edu.bjtu.mis 仍在。没有卸载/清除/读取正式应用数据。源码备份、日志、APK 和截图均留在本地忽略目录。
 - 2026-10-13：推送前只读核对 origin/dev 仍为 d279c5c，无远端新增提交；开始最终显式暂存和秘密/生成物审查。
 - 2026-10-13：显式清单共 92 个文件完成暂存，cached diff --check 通过，未发现私钥/token 或本机配置、APK、缓存、前端产物。原始源码备份逐文件 SHA256 比较仅工作流与验收计划文档有本次预期更新，其余既有改动保持原样。ThirdPartyServiceInstaller.kt 的规范化 Git blob 与 HEAD 完全一致，未产生源码提交差异。
+- 2026-10-13：功能提交 843bfec23862ce1f8adbb358c8eb90b63a14b204 已普通推送到 origin/dev，ls-remote 与本地 SHA 一致；dev 已跟踪 origin/dev，没有 force push，也未推送 Gitee。GitHub Actions “Plugin platform v3 baseline” run 38378009183 已启动，提交记录时 in_progress，尚不宣称 API 26/35 或 PostgreSQL CI 通过。
+- 2026-10-13：保留 ThirdPartyServiceInstaller.kt 原始混合行尾字节；git status 会显示未暂存 M，但 git diff --raw/--numstat 为空，hash-object 与已推送 HEAD 的 blob 均为 359ef39517da7ba799c7b7e3b7384670ad1845dd，没有遗漏源码内容。不得为清空状态而覆盖用户文件。最终发布记录以本次文档提交追加，随后同样普通推送并核对远端。
 
 ## 完成清单
 
@@ -77,4 +79,4 @@
 - [x] 真机实际操作与 instrumentation 已执行并记录。
 - [x] JVM / 前端 / 工具链 / 平台验证及环境限制已记录。
 - [x] 提交范围、生成物、secrets 与 diff 已审查。
-- [ ] 测试通过后已提交和普通推送 origin/dev，并核对远端 SHA。
+- [x] 测试通过后已提交和普通推送 origin/dev，并核对远端 SHA。
