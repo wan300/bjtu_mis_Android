@@ -6,11 +6,23 @@ type JsonRecord = Record<string, any>;
 export type NativeAgentToolDefinition = {
 	type: 'function';
 	requiresWorkspace?: boolean;
+	policy?: NativeAgentToolPolicy;
 	function: {
 		name: string;
 		description: string;
 		parameters: JsonRecord;
 	};
+};
+
+export type NativeAgentToolPolicy = {
+	operation: 'read' | 'command' | 'unavailable';
+	dataScope: string;
+	requiresConfirmation: boolean;
+	requiresForeground: boolean;
+	requiresIdempotencyKey: boolean;
+	timeoutMs: number;
+	maxInputBytes: number;
+	maxOutputBytes: number;
 };
 
 export type NativeAgentAttachment = {
@@ -70,6 +82,7 @@ type NativeAgentToolsPlugin = {
 	consumePendingHomeworkDraft(): Promise<NativeAgentHomeworkDraft>;
 	listTools(): Promise<{ tools: NativeAgentToolDefinition[] }>;
 	executeTool(options: {
+		requestId?: string;
 		workspaceId?: string | null;
 		toolName: string;
 		arguments?: JsonRecord;
@@ -112,12 +125,13 @@ export const listNativeAgentTools = async () => {
 };
 
 export const executeNativeAgentTool = async (options: {
+	requestId?: string;
 	workspaceId?: string | null;
 	toolName: string;
 	arguments?: JsonRecord;
 }) => {
 	requireNativeAgentTools();
-	return NativeAgentTools.executeTool(options);
+	return NativeAgentTools.executeTool({ ...options, requestId: options.requestId ?? crypto.randomUUID() });
 };
 
 export const beginNativeAgentKeepAlive = async (options: {

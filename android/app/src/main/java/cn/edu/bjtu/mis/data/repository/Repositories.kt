@@ -30,6 +30,7 @@ import cn.edu.bjtu.mis.data.security.LoginCredentials
 import cn.edu.bjtu.mis.model.AcademicProgressData
 import cn.edu.bjtu.mis.model.AutoLoginResult
 import cn.edu.bjtu.mis.model.CalendarData
+import cn.edu.bjtu.mis.model.CoverageLevel
 import cn.edu.bjtu.mis.model.CourseReplayData
 import cn.edu.bjtu.mis.model.CourseReplayPlaybackInfo
 import cn.edu.bjtu.mis.model.CourseResourceItem
@@ -140,6 +141,8 @@ class SessionRepository(
 class SyncRepository(
     @PublishedApi internal val dao: BjtuMisDao,
     private val sessionManager: SessionManager,
+    private val beforeTodoChange: suspend (Long) -> Unit = {},
+    private val todoMutex: Mutex = Mutex(),
 ) {
     private val mutex = Mutex()
 
@@ -342,13 +345,18 @@ class SyncRepository(
     suspend fun userTodos(): List<UserTodoItem> =
         dao.getUserTodos().map { it.toModel() }
 
-    suspend fun saveUserTodo(draft: UserTodoDraft): Long {
-        val now = nowIso()
+    suspend fun saveUserTodo(draft: UserTodoDraft, expectedUpdatedAt: String? = null): Long = todoMutex.withLock {
         val existing = draft.id?.let { dao.getUserTodo(it) }
+        val now = nextTodoVersion(existing?.updatedAt)
+        if (draft.id != null && existing == null) throw TodoMutationException("todo_not_found", "待办不存在")
+        if (expectedUpdatedAt != null && existing?.updatedAt != expectedUpdatedAt) {
+            throw TodoMutationException("todo_conflict", "待办已修改，请重新查询")
+        }
         val title = draft.title.trim()
         require(title.isNotBlank()) { "待办标题不能为空" }
         val date = LocalDate.parse(draft.date.trim()).toString()
-        return dao.saveUserTodo(
+        existing?.let { beforeTodoChange(it.id) }
+        dao.saveUserTodo(
             UserTodoEntity(
                 id = draft.id ?: 0,
                 title = title,
@@ -361,11 +369,19 @@ class SyncRepository(
         )
     }
 
-    suspend fun setUserTodoDone(id: Long, done: Boolean) {
-        dao.setUserTodoDone(id, done, nowIso())
+    suspend fun setUserTodoDone(id: Long, done: Boolean) = todoMutex.withLock {
+        val existing = dao.getUserTodo(id) ?: throw TodoMutationException("todo_not_found", "待办不存在")
+        if (existing.done == done) return@withLock
+        beforeTodoChange(id)
+        dao.setUserTodoDone(id, done, nextTodoVersion(existing.updatedAt))
     }
 
-    suspend fun deleteUserTodo(id: Long) {
+    suspend fun deleteUserTodo(id: Long, expectedUpdatedAt: String? = null) = todoMutex.withLock {
+        val existing = dao.getUserTodo(id) ?: throw TodoMutationException("todo_not_found", "待办不存在")
+        if (expectedUpdatedAt != null && existing.updatedAt != expectedUpdatedAt) {
+            throw TodoMutationException("todo_conflict", "待办已修改，请重新查询")
+        }
+        beforeTodoChange(id)
         dao.deleteUserTodo(id)
     }
 
@@ -451,17 +467,28 @@ class ModuleRepository(
     private val singleFlight: SingleFlight = SingleFlight(),
 ) {
     suspend fun calendarDashboard(strategy: ModuleLoadStrategy): CalendarDashboard {
-        suspend fun <T> optionalItems(load: suspend () -> List<T>): List<T> = try {
+        val errors = mutableListOf<String>()
+        suspend fun <T> optionalItems(label: String, load: suspend () -> List<T>): List<T> = try {
             load()
         } catch (error: Exception) {
             if (error is CancellationException) throw error
+            errors += "$label 不可用，请刷新或稍后重试"
             emptyList()
         }
+        val calendar = try {
+            calendar(strategy = strategy)
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            errors += "校园日历不可用，当前仅展示本地待办和已取得的日程"
+            ModuleEnvelope(module = ModuleKeys.Calendar, sourceSystem = "native_local",
+                coverage = CoverageLevel.Provisional, data = CalendarData(month = LocalDate.now().toString().take(7)))
+        }
         return CalendarDashboard(
-            calendarEnvelope = calendar(strategy = strategy),
-            homework = optionalItems { homework("all", strategy).data.items },
-            exams = optionalItems { exams(strategy = strategy).data.items },
+            calendarEnvelope = calendar,
+            homework = optionalItems("作业") { homework("all", strategy).data.items },
+            exams = optionalItems("考试") { exams(strategy = strategy).data.items },
             todos = userTodos(),
+            campusErrors = errors.toList(),
         )
     }
 
@@ -694,15 +721,15 @@ class ModuleRepository(
     suspend fun userTodos(): List<UserTodoItem> =
         syncRepository.userTodos()
 
-    suspend fun saveUserTodo(draft: UserTodoDraft): Long =
-        syncRepository.saveUserTodo(draft)
+    suspend fun saveUserTodo(draft: UserTodoDraft, expectedUpdatedAt: String? = null): Long =
+        syncRepository.saveUserTodo(draft, expectedUpdatedAt)
 
     suspend fun setUserTodoDone(id: Long, done: Boolean) {
         syncRepository.setUserTodoDone(id, done)
     }
 
-    suspend fun deleteUserTodo(id: Long) {
-        syncRepository.deleteUserTodo(id)
+    suspend fun deleteUserTodo(id: Long, expectedUpdatedAt: String? = null) {
+        syncRepository.deleteUserTodo(id, expectedUpdatedAt)
     }
 
     private suspend fun ModuleEnvelope<TimetableData>.withUserCourses(): ModuleEnvelope<TimetableData> {
@@ -1609,6 +1636,12 @@ class CourseSelectionRepository(
 @PublishedApi
 internal fun nowIso(): String =
     OffsetDateTime.now(ZoneOffset.UTC).withNano(0).toString()
+
+private fun nextTodoVersion(previous: String?): String {
+    val now = OffsetDateTime.now(ZoneOffset.UTC)
+    val last = previous?.let { runCatching { OffsetDateTime.parse(it) }.getOrNull() }
+    return (if (last != null && !now.isAfter(last)) last.plusNanos(1) else now).toString()
+}
 
 private fun String?.blankToNull(): String? =
     this?.trim()?.takeIf { it.isNotBlank() }

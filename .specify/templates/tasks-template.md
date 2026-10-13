@@ -1,14 +1,14 @@
 # Tasks: [FEATURE NAME]
 
 **Input**: spec and plan for [FEATURE NAME]  
-**Constitution Version**: 2.0.0
+**Constitution Version**: 3.2.0
 
 ## Task Rules
 
 - Each task MUST name the file, component or behavior it changes.
 - Tasks that touch parser, provider, repository, Agent tools or Open WebUI local-first behavior MUST include matching tests or fixtures.
 - Tasks that touch credentials, Cookie, mail, coursework actions, files, archives or generated outputs MUST include explicit safety checks.
-- Tasks that touch third-party plugins MUST preserve Manifest v3 / contract_v1 compatibility, registry-generated Capability contracts, stable publisher identity, host-fixed self/main-frame bridge isolation, split origins, transactional storage and the read-only campus registry.
+- Tasks that touch third-party plugins MUST preserve Manifest v3 / contract_v1 compatibility, registry-generated Capability contracts, stable publisher identity, host-fixed self/main-frame bridge isolation, split origins, transactional storage and the read-only campus registry; optional-only declarations must be rejected from required capabilities.
 - Tasks that touch Android automation MUST include service-unavailable, redaction/expiry, runtime quota, foreground-priority/background-restore, idempotency-without-confirmer, restricted package/settings, revocation and API 26/35 instrumentation coverage.
 - High-risk changes MUST reference the active ExecPlan and include rollback verification tasks.
 
@@ -46,4 +46,4 @@
 - Rollback notes:
 
 
-插件会话保活遵循 constitution 3.1.0：`android.session.keepAlive@1` 采用按 publisher+plugin 隔离的加密限时租约，acquire/renew 必须前台发起，后台可查询/释放；到期、更新/回滚、撤销、删除、登出、用户停止和系统限制均清理，恢复不能延长时限或绕过 FGS 限制。执行与验证见 `docs/plugin-session-keepalive-execplan.md`。
+插件会话保活遵循 constitution 3.2.0：`android.session.keepAlive@1` 采用按 publisher+plugin 隔离的加密限时租约，acquire/renew 必须前台发起，后台可查询/释放；到期、更新/回滚、撤销、删除、登出、用户停止和系统限制均清理，恢复不能延长时限或绕过 FGS 限制。执行与验证见 `docs/plugin-session-keepalive-execplan.md`。

@@ -11,4 +11,5 @@ data class CalendarDashboard(
     val homework: List<HomeworkItem>,
     val exams: List<ExamItem>,
     val todos: List<UserTodoItem>,
+    val campusErrors: List<String> = emptyList(),
 )

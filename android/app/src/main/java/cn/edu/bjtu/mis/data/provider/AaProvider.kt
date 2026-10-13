@@ -45,6 +45,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import java.io.IOException
@@ -861,11 +862,16 @@ class AaProvider(
         if (params.isNotEmpty()) {
             params["has_advance_query"] = ""
         }
-        val html = getText("/classroom/timeholdresult/room_view/", params)
+        // The shared HTTP client's params helper omits blank values. This form needs
+        // explicit empty values to clear building/room filters and enable advance query.
+        val url = (aaBaseUrl + "/classroom/timeholdresult/room_view/").toHttpUrl().newBuilder().apply {
+            params.forEach { (key, value) -> if (value != null) addQueryParameter(key, value) }
+        }.build()
+        val html = getText(url.toString())
         val parsed = parseEmptyRooms(
             html,
             mapOf("term" to term, "week" to params["zc"], "building" to building, "room" to room)
-                .filterValues { !it.isNullOrBlank() },
+                .filterValues { it != null },
         )
         return ModuleEnvelope(
             module = "empty_rooms",

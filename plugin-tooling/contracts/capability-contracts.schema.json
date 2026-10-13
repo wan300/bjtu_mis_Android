@@ -117,6 +117,9 @@
             "type": "integer",
             "minimum": 2
           },
+          "optionalOnly": {
+            "type": "boolean"
+          },
           "permission": {
             "type": [
               "object",

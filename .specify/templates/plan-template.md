@@ -2,7 +2,7 @@
 
 **Branch**: `[###-feature-name]`  
 **Spec**: [link-to-spec]  
-**Constitution Version**: 2.0.0
+**Constitution Version**: 3.2.0
 
 **Created**: [DATE]
 
@@ -33,7 +33,7 @@ Complete this check before implementation starts. Any FAIL must be resolved or d
 - Dependencies and artifacts: PASS/FAIL - no unnecessary dependency or generated/local/secret artifact will be committed.
 - Rollback and ExecPlan: PASS/FAIL - high-risk changes have rollback steps and a maintained ExecPlan.
 - Plugin zero-trust baseline: PASS/FAIL/N/A - plugin work uses Manifest v3 / contract_v1, registry-generated versioned capabilities, stable publisher identity, host-fixed self/main-frame bridge, split origins, transactional storage and the read-only campus registry; legacy documents are not treated as authority.
-- Android persistent capability exception: PASS/FAIL/N/A - only the constitution-listed Android capabilities use persistent authorization; system UI/permission foreground gates, redaction, resource isolation, idempotency, quotas, foreground priority, notification, revocation and API 26/35 validation are planned.
+- Android persistent capability exception: PASS/FAIL/N/A - only the constitution-listed Android capabilities use persistent authorization; system UI/permission foreground gates, redaction, resource isolation, idempotency, quotas, foreground priority, notification, revocation and API 26/35 validation are planned; declaration-only optional startup remains default-off and main-Activity-triggered.
 
 ## Design
 
@@ -81,4 +81,4 @@ Complete this check before implementation starts. Any FAIL must be resolved or d
 - User-visible recovery:
 
 
-插件会话保活遵循 constitution 3.1.0：`android.session.keepAlive@1` 采用按 publisher+plugin 隔离的加密限时租约，acquire/renew 必须前台发起，后台可查询/释放；到期、更新/回滚、撤销、删除、登出、用户停止和系统限制均清理，恢复不能延长时限或绕过 FGS 限制。执行与验证见 `docs/plugin-session-keepalive-execplan.md`。
+插件会话保活遵循 constitution 3.2.0：`android.session.keepAlive@1` 采用按 publisher+plugin 隔离的加密限时租约，acquire/renew 必须前台发起，后台可查询/释放；到期、更新/回滚、撤销、删除、登出、用户停止和系统限制均清理，恢复不能延长时限或绕过 FGS 限制。执行与验证见 `docs/plugin-session-keepalive-execplan.md`。

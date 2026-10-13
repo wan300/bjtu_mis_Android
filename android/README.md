@@ -117,8 +117,8 @@ API 与兼容说明。
 - 作业列表中的“Agent 协助”按钮会写入 `NativeAgentHomeworkHandoffStore`，然后跳转到 Open WebUI Agent。
 - Open WebUI 启动后消费 pending handoff，生成作业分析草稿，并在请求参数中携带 `agent_workspace_id`。
 - Android 端自动下载作业附件并导入 Agent workspace。压缩包不在 handoff 阶段自动解压，Agent 需要通过 `agent_archive_extract` 按需解压到 `work/attachments/`。当前支持 `zip`/`jar`、`tar`、`tar.gz`/`tgz`、`tar.bz2`/`tbz2`、`gz` 和 `bz2`，并限制路径穿越、条目数量、单文件大小和总大小。
-- Open WebUI local-first agent loop 会根据 `agent_workspace_id` 动态挂载 Android 原生 `agent_*` 工具。邮件工具不需要 workspace，其他文件、归档、文档和结果打包工具需要 workspace。
-- `agent_mail_send` 发送前必须经过 Open WebUI 确认弹窗；作业 Agent 不会自动提交课程平台作业。
+- Android 普通聊天自动进入 local-first agent loop；系统状态、校园查询和邮件工具不需要 workspace，文件、归档、文档、代码和结果打包工具需要 workspace。前后端均依据原生注册元数据判断。
+- 原生入口统一校验参数、工作区、前台、确认、超时和输入/输出限额。校园/邮件读取会提示结果可能发送给配置的模型服务；状态修改必须原生逐次确认。`agent_mail_send` 同时保留既有 Open WebUI 确认弹窗；作业 Agent 不会自动提交课程平台作业。
 
 ## 原生工具
 
@@ -130,6 +130,10 @@ API 与兼容说明。
 - 代码：`agent_run_javascript`
 - 邮件：`agent_mail_list_folders`、`agent_mail_list_recent`（支持最近天数或显式日期区间）、`agent_mail_read`、`agent_mail_mark_read`、`agent_mail_digest_context`、`agent_mail_search_contacts`、`agent_mail_save_draft`、`agent_mail_send`
 - 结果：`agent_package_results`
+- 校园只读：`agent_system_status`、`agent_academic_timetable`、`agent_academic_exams`、`agent_academic_homework`、`agent_academic_agenda`。默认仅查缓存，支持原生确认后的 `refresh`；详见 [工具契约](../docs/openwebui-campus-tools.md)。
+- 原生待办：`agent_todo_list`、`agent_todo_create`、`agent_todo_update`、`agent_todo_delete`；与原生日历共用 Room，编辑/完成/删除撤销关联提醒，条件写入防止覆盖并发修改。
+- 提醒：`agent_reminder_set`、`agent_reminder_cancel`，需要通知许可，使用持久令牌和 WorkManager 非精确调度；原生日历可查看状态/取消，通知点击回到日历。
+- 页面：`agent_app_open_page`，仅白名单模块及缓存可验证的作业详情/资料目录。上述工具无需工作区，敏感读取、命令及导航仍逐次原生确认；WebUI tasks 独立保存，不自动迁移。执行与回滚见 [第二阶段 ExecPlan](../docs/openwebui-campus-tools-phase2-execplan.md)。
 
 ## 关键路径
 
@@ -159,3 +163,5 @@ API 与兼容说明。
 `local.properties`、`release-signing.properties`、keystore、Gradle 缓存、APK/AAB、release 输出、`open-webui/node_modules/`、`open-webui/build/`、`.svelte-kit/` 和 `app/src/main/assets/public/` 都是本机、秘密或构建生成内容，不应提交。`app/schemas/` 是例外：其中用于迁移验证且经审查的 Room schema 版本历史应随对应 migration 提交。
 
 第三方插件可声明 `android.session.keepAlive@1`（runtime 3），首次/增量授权后在前台申请/续租 MIS 会话保活，后台查询/释放。单租约最多 60 分钟，支持通知停止和撤销清理；详细协议见 [`docs/third-party-services.md`](../docs/third-party-services.md#插件-mis-会话保活runtime-3)。
+
+`android.app.autoStart@1`（runtime 4）只能作为可选声明，默认关闭。用户明确授予后，打开主应用且主 Activity 可见时宿主可加载插件本地入口，后台实例全局最多四个，持续通知可停止；不会开机启动、永久保活或扩大无障碍访问。详见 [`docs/third-party-services.md`](../docs/third-party-services.md#打开主应用时可选自启runtime-4)。

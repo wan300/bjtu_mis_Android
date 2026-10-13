@@ -569,6 +569,11 @@ Content-Type: application/json
             <h2>插件 MIS 会话保活</h2>
             <p><code>android.session.keepAlive@1</code>（beta，runtime 3）支持前台申请/续租、后台查询/释放限时租约，首次或增量授权后生效。每插件最多 2 个租约，创建起最长 60 分钟；持续通知可停止，撤销/更新/删除会清理。不会暴露凭据，也不保证进程永久存活。</p>
           </section>
+          <section class="docs-section reveal" id="app-autostart">
+            <p class="eyebrow">Optional app-open startup</p>
+            <h2>打开主应用时可选启动插件</h2>
+            <p><code>android.app.autoStart@1</code>（beta，runtime 4）只能声明在 <code>capabilities.optional</code>，默认关闭，用户明确授权后由可见主 Activity 启动插件本地入口。没有 JS 方法；后台运行需要持续通知，最多四个后台实例，可全部停止。这不是开机启动或永久保活，不扩大既有无障碍访问与系统权限。</p>
+          </section>
         </div>
       </div>
     </main>

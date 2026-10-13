@@ -1328,8 +1328,9 @@ fun parseEmptyRooms(html: String, requestedQuery: Map<String, String?> = emptyMa
         "week" to (selectedWeek ?: parseInputValue(document, "zc")),
         "building" to (selectedBuilding ?: parseInputValue(document, "jxlh")),
         "room" to parseInputValue(document, "jash"),
-    ).filterValues { !it.isNullOrBlank() }
-    val query = formQuery + requestedQuery.filterValues { !it.isNullOrBlank() }
+    ).filterValues { it != null }
+    // Empty building/room values explicitly clear a filter and belong in cache metadata.
+    val query = formQuery + requestedQuery.filterValues { it != null }
     fun emptyData(
         days: List<String> = emptyList(),
         periods: List<Int> = emptyList(),

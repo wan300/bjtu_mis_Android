@@ -135,6 +135,7 @@ dist/
 - `android.calendar.read@1`、`android.calendar.write@1`、`android.camera.capture@1`
 - `android.audio.record@1`、`android.sensors.read@1`、`android.biometric.verify@1`
 - `android.session.keepAlive@1`（runtime 3）
+- `android.app.autoStart@1`（runtime 4，仅 `capabilities.optional`）
 
 精确方法、请求/响应 schema、权限、确认、幂等、配额、超时、错误和平台支持范围见
 [生成的 API 参考](generated/plugin-capability-api.md)。
@@ -408,6 +409,19 @@ README Markdown 在宿主侧清洗后以独立浮窗 WebView 展示。该 WebVie
 User Content/GitHub Assets 图片，其他资源会被移除；README 链接只在用户点击时交给系统浏览器。
 README 缺失或读取失败不会阻止用户继续确认或取消安装。
 
+
+## 打开主应用时可选自启（runtime 4）
+
+`android.app.autoStart@1` 是仅声明型能力，没有 SDK/JS 方法。插件作者只能将其加入 Manifest 的 `capabilities.optional`；放入 `required` 会被 schema、lint、平台与 Android 宿主拒绝。例如：
+
+```json
+"capabilities": {
+  "required": ["runtime.lifecycle@1"],
+  "optional": ["android.app.autoStart@1"]
+}
+```
+
+可选授权默认关闭，用户在首次/增量授权或插件管理页明确开启后，宿主才会在用户打开主应用、主 Activity 可见时加载插件的稳定本地入口。关闭插件页面后已授权的后台能力可继续运行，受持续通知、全部停止、全局最多四个后台 runtime 与前台事件优先约束。停止、撤销、禁用、复审、声明移除、发布者不匹配或更新/回滚会停止对应自启；重新开启须用户明确选择。这不是设备开机启动或永久保活，不扩大无障碍节点、动作、脱敏和限流权限，也不绕过 Android 系统权限或系统 UI 的前台要求。
 
 ## 插件 MIS 会话保活（runtime 3）
 

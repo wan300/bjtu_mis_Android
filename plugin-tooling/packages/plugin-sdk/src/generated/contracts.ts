@@ -73,6 +73,7 @@ export const CAPABILITY_IDS = [
   "academic.userCourses.command@1",
   "academic.homework.submit@1",
   "mail.send@1",
+  "android.app.autoStart@1",
   "android.session.keepAlive@1"
 ] as const;
 export type CapabilityId = (typeof CAPABILITY_IDS)[number];
@@ -6457,6 +6458,28 @@ export const CAPABILITY_REGISTRY = {
           ]
         }
       ]
+    },
+    {
+      "id": "android.app.autoStart@1",
+      "stability": "beta",
+      "runtimeFloor": 4,
+      "optionalOnly": true,
+      "permission": {
+        "id": "android.app.autoStart",
+        "title": "打开主应用时自动启动插件",
+        "description": "允许插件在你打开 BJTU MIS 主应用且主 Activity 可见时加载并在后台运行。默认关闭，不会开机启动或绕过系统权限。"
+      },
+      "confirmation": "none",
+      "idempotency": "none",
+      "quota": {
+        "maxBackgroundRuntimes": 4
+      },
+      "timeoutMs": 0,
+      "support": {
+        "androidMinApi": 26,
+        "webViewFeatures": []
+      },
+      "methods": []
     },
     {
       "id": "android.session.keepAlive@1",

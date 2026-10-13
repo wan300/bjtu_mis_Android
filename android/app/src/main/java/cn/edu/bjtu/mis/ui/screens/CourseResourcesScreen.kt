@@ -53,12 +53,14 @@ import java.io.File
 fun CourseResourcesScreen(
     repository: CourseResourceRepository,
     initialLoadStrategy: ModuleLoadStrategy = ModuleLoadStrategy.NetworkFirst,
+    initialCourseId: String = "",
+    initialFolderId: String = "0",
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    var selectedCourseId by remember { mutableStateOf("") }
+    var selectedCourseId by remember { mutableStateOf(initialCourseId) }
     var selectedCategoryKey by remember { mutableStateOf("all") }
-    var folderId by remember { mutableStateOf("0") }
+    var folderId by remember { mutableStateOf(initialFolderId) }
     var search by remember { mutableStateOf("") }
     var state by remember { mutableStateOf(ProgressiveModuleState<CourseResourcesData>()) }
     var downloading by remember { mutableStateOf<String?>(null) }

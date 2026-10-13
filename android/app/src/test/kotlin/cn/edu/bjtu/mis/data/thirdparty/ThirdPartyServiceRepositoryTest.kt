@@ -222,6 +222,53 @@ class ThirdPartyServiceRepositoryTest {
     }
 
     @Test
+    fun appAutoStartGrantIsOptionalAndBatchClearRemovesIt() = runBlocking {
+        MockWebServer().use { server ->
+            val dao = FakeThirdPartyServiceDao()
+            val manifest = validManifest(
+                extraOptionalCapabilities = listOf(PluginAppAutoStartPolicy.CAPABILITY),
+            )
+            dao.saved["bjtu.demo"] = existingAuthorizedEntity().copy(
+                manifestJson = manifest,
+                grantedCapabilitiesJson = AppJson.encodeToString(
+                    listOf("runtime.lifecycle@1", "identity.profile@1"),
+                ),
+            )
+            val repository = repository(server, dao)
+
+            val enabled = repository.setAppAutoStartEnabled("bjtu.demo", true)
+
+            assertTrue(PluginAppAutoStartPolicy.CAPABILITY in enabled.grantedCapabilities)
+            assertTrue(PluginAppAutoStartPolicy.CAPABILITY in dao.saved.getValue("bjtu.demo").grantedCapabilitiesJson)
+
+            repository.clearAllAppAutoStart()
+
+            val cleared = repository.getService("bjtu.demo")!!
+            assertFalse(PluginAppAutoStartPolicy.CAPABILITY in cleared.grantedCapabilities)
+        }
+    }
+
+    @Test
+    fun appAutoStartGrantRejectsUndeclaredCapability() = runBlocking {
+        MockWebServer().use { server ->
+            val dao = FakeThirdPartyServiceDao().apply {
+                saved["bjtu.demo"] = existingAuthorizedEntity()
+            }
+            val repository = repository(server, dao)
+
+            val result = runCatching {
+                repository.setAppAutoStartEnabled("bjtu.demo", true)
+            }
+
+            assertTrue(result.isFailure)
+            assertFalse(
+                PluginAppAutoStartPolicy.CAPABILITY in
+                    repository.getService("bjtu.demo")!!.grantedCapabilities,
+            )
+        }
+    }
+
+    @Test
     fun listServicesRemovesObsoleteBundledServicesThatAreNoLongerShipped() = runBlocking {
         MockWebServer().use { server ->
             val dao = FakeThirdPartyServiceDao()

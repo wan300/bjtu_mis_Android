@@ -48,6 +48,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -76,6 +77,7 @@ import cn.edu.bjtu.mis.data.thirdparty.AndroidAccessibilityController
 import cn.edu.bjtu.mis.data.thirdparty.AndroidNativeEventController
 import cn.edu.bjtu.mis.data.thirdparty.AndroidNativeRuntimeController
 import cn.edu.bjtu.mis.data.thirdparty.PluginWebViewPolicy
+import cn.edu.bjtu.mis.data.thirdparty.PluginAppAutoStartPolicy
 import cn.edu.bjtu.mis.data.thirdparty.PluginWebViewRuntimeEnvironment
 import cn.edu.bjtu.mis.data.thirdparty.ThirdPartyCapabilityRegistry
 import cn.edu.bjtu.mis.data.thirdparty.ThirdPartySandboxResourceResolution
@@ -479,7 +481,22 @@ fun ThirdPartyServicesScreen(
                                     service.publisherSubjectId,
                                     service.serviceId,
                                 )
+                                scope.launch {
+                                    runCatching {
+                                        repository.clearAppAutoStart(service.publisherSubjectId, service.serviceId)
+                                    }
+                                    load()
+                                }
                                 message = "已停止 ${service.manifest.name} 的后台自动化"
+                            },
+                            onToggleAutoStart = { enabled ->
+                                scope.launch {
+                                    busy = true
+                                    runCatching { repository.setAppAutoStartEnabled(service.serviceId, enabled) }
+                                        .onFailure { message = it.message ?: "更新自启设置失败" }
+                                    busy = false
+                                    load()
+                                }
                             },
                             onReviewAutomation = {
                                 scope.launch {
@@ -798,6 +815,7 @@ private fun ThirdPartyServiceManagementCard(
     onUpdate: () -> Unit,
     onConfigure: () -> Unit,
     onStopAutomation: () -> Unit,
+    onToggleAutoStart: (Boolean) -> Unit,
     onReviewAutomation: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -857,7 +875,7 @@ private fun ThirdPartyServiceManagementCard(
                 Text("配置插件环境变量")
             }
         }
-        if (hasAndroidGrant && service.canRun) {
+        if (service.canRun && (hasAndroidGrant || PluginAppAutoStartPolicy.CAPABILITY in service.manifest.optionalCapabilities)) {
             val connected = AndroidAccessibilityController.isConnected()
             val accessibilityPersistent = AndroidAccessibilityController.hasPersistentSubscriptions(
                 service.publisherSubjectId,
@@ -883,6 +901,25 @@ private fun ThirdPartyServiceManagementCard(
                     MaterialTheme.colorScheme.error
                 },
             )
+            val autoStartDeclared = PluginAppAutoStartPolicy.CAPABILITY in service.manifest.optionalCapabilities
+            if (autoStartDeclared) {
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("打开主应用时自动启动", style = MaterialTheme.typography.bodyMedium)
+                        Text("在后台加载插件，并使用已授权的无障碍能力", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = PluginAppAutoStartPolicy.CAPABILITY in service.grantedCapabilities,
+                        onCheckedChange = onToggleAutoStart,
+                        enabled = !busy,
+                    )
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(onClick = onStopAutomation, enabled = !busy, modifier = Modifier.weight(1f)) {
                     Text("停止后台运行")

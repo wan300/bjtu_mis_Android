@@ -6,6 +6,8 @@
     <string name="plugin_automation_notification_title">BJTU MIS 插件自动化正在运行</string>
     <string name="plugin_automation_notification_text">最多 4 个已授权插件可在后台接收无障碍事件</string>
     <string name="plugin_automation_stop_all">全部停止</string>
+    <string name="plugin_autostart_notification_title">插件自动启动运行中</string>
+    <string name="plugin_autostart_notification_text">已按你的选择在后台加载插件</string>
     <string name="login_title">BJTU MIS</string>
     <string name="login_subtitle">校园信息本地采集与离线查看</string>
     <string name="student_or_staff_id">学号 / 工号</string>

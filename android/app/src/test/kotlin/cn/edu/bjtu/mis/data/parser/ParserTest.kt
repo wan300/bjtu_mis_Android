@@ -201,6 +201,19 @@ class ParserTest {
     }
 
     @Test
+    fun parseEmptyRoomsPreservesExplicitlyClearedFilters() {
+        val data = parseEmptyRooms(
+            text("empty_rooms.html"),
+            mapOf("building" to "", "room" to "", "week" to "8"),
+        )
+
+        assertEquals("", data.query["building"])
+        assertEquals("", data.query["room"])
+        assertEquals("8", data.query["week"])
+        assertEquals("2024-2025-2-1", data.query["term"])
+    }
+
+    @Test
     fun parseEmptyRoomsCellStatesFromStyles() {
         val html = """
             <table class="table table-bordered">

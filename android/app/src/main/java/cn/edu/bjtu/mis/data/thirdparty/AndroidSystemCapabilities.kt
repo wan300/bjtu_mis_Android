@@ -25,6 +25,9 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
@@ -244,7 +247,7 @@ object AndroidAccessibilityController {
         if (automationStore?.list()?.none {
                 it.publisherSubjectId == publisherSubjectId && it.serviceId == serviceId
             } != false) {
-            supervisor?.stopService(publisherSubjectId, serviceId)
+            supervisor?.releaseKeepAliveReason(publisherSubjectId, serviceId)
         }
         refreshAutomationForeground()
     }
@@ -915,6 +918,15 @@ class StopPluginAutomationReceiver : BroadcastReceiver() {
         )
         AndroidAccessibilityController.stopAllAutomation()
         AndroidNativeEventController.stopAll()
+        val pending = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                container.thirdPartyServiceRepository.clearAllAppAutoStart()
+                container.pluginAutomationSupervisor.onAutoStartGrantsCleared()
+            } finally {
+                pending.finish()
+            }
+        }
     }
 }
 

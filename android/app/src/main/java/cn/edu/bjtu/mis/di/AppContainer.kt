@@ -11,6 +11,16 @@ import cn.edu.bjtu.mis.data.agent.tools.FileTool
 import cn.edu.bjtu.mis.data.agent.tools.MailAgentTool
 import cn.edu.bjtu.mis.data.agent.tools.PackageTool
 import cn.edu.bjtu.mis.data.agent.tools.ToolRegistry
+import cn.edu.bjtu.mis.data.agent.tools.AcademicAgentTool
+import cn.edu.bjtu.mis.data.agent.tools.RepositoryAcademicAgentGateway
+import cn.edu.bjtu.mis.data.agent.tools.NativeTodoAgentTool
+import cn.edu.bjtu.mis.data.agent.tools.RepositoryNativeTodoGateway
+import cn.edu.bjtu.mis.data.agent.tools.AppNavigationAgentTool
+import cn.edu.bjtu.mis.data.agent.tools.AgentNavigationRequests
+import cn.edu.bjtu.mis.data.agent.tools.RepositoryAgentPageGateway
+import cn.edu.bjtu.mis.data.todo.TodoReminders
+import cn.edu.bjtu.mis.data.todo.DataStoreTodoReminderStore
+import cn.edu.bjtu.mis.data.todo.AndroidTodoReminderScheduler
 import cn.edu.bjtu.mis.data.agent.tools.WorkspaceManager
 import cn.edu.bjtu.mis.data.course.CourseSelectionRunner
 import cn.edu.bjtu.mis.data.captcha.TorchScriptCaptchaSolver
@@ -74,6 +84,7 @@ import cn.edu.bjtu.mis.data.update.AppUpdatePreferenceStore
 import cn.edu.bjtu.mis.data.update.installedVersionName
 import cn.edu.bjtu.mis.ui.preferences.QuickActionsStore
 import cn.edu.bjtu.mis.ui.theme.AppThemeStore
+import kotlinx.coroutines.sync.Mutex
 
 class AppContainer(context: Context) {
     private val appContext = context.applicationContext
@@ -117,8 +128,15 @@ class AppContainer(context: Context) {
     val appUpdatePreferenceStore = AppUpdatePreferenceStore(appContext)
     val sessionManager = SessionManager(cookieStore, credentialStore, cookieJar, httpClient, captchaSolver)
     val sessionRepository = SessionRepository(sessionManager)
-    val syncRepository = SyncRepository(database.dao(), sessionManager)
+    private val todoMutex = Mutex()
+    val syncRepository = SyncRepository(database.dao(), sessionManager,
+        beforeTodoChange = { todoReminders.cancelForMutation(it) }, todoMutex = todoMutex)
     val moduleRepository = ModuleRepository(syncRepository, sessionManager)
+    val agentNavigationRequests = AgentNavigationRequests()
+    val todoReminders: TodoReminders by lazy {
+        TodoReminders(DataStoreTodoReminderStore(appContext), AndroidTodoReminderScheduler(appContext),
+            findTodo = { id -> moduleRepository.userTodos().find { it.id == id } }, mutex = todoMutex)
+    }
     val overviewRepository = OverviewRepository(syncRepository)
     val courseResourceRepository: CourseResourceRepository by lazy {
         PerfTrace.measure("AppContainer.courseResourceRepository") {
@@ -217,6 +235,9 @@ class AppContainer(context: Context) {
                     DocumentTool(appContext, agentWorkspaceManager).tools() +
                     CodeTool(agentRuntimeManager).tools() +
                     MailAgentTool(mailRepository).tools() +
+                    AcademicAgentTool(RepositoryAcademicAgentGateway(moduleRepository, sessionRepository)).tools() +
+                    NativeTodoAgentTool(RepositoryNativeTodoGateway(moduleRepository, todoReminders)).tools() +
+                    listOf(AppNavigationAgentTool(RepositoryAgentPageGateway(moduleRepository, agentNavigationRequests))) +
                     PackageTool(agentWorkspaceManager).tools()
             )
         }

@@ -206,6 +206,14 @@ object ThirdPartyManifestValidator {
 
         val requiredCapabilities =
             normalizeCapabilities(manifest.capabilities.required, "capabilities.required")
+        val optionalOnlyRequired = requiredCapabilities.filter { capability ->
+            ThirdPartyCapabilityRegistry.get(capability)?.optionalOnly == true
+        }
+        if (optionalOnlyRequired.isNotEmpty()) {
+            throw ThirdPartyServiceException(
+                "Capabilities may only appear in capabilities.optional: ${optionalOnlyRequired.joinToString()}",
+            )
+        }
         val optionalCapabilities =
             normalizeCapabilities(manifest.capabilities.optional, "capabilities.optional")
         if ("runtime.lifecycle@1" !in requiredCapabilities) {

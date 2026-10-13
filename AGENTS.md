@@ -241,4 +241,4 @@ Open WebUI：
 复杂功能、风险重构、数据迁移、架构边界变化、构建/依赖升级、权限或安全敏感改动，以及需求不清的任务，应先根据 `PLANS.md` 写一个可执行、可恢复、持续更新的 `ExecPlan`。constitution 第 VI 条列出的高风险变更必须先有 ExecPlan；插件相关计划还必须通过原则 VII 的零信任基线检查。计划应先解决目标、范围、验证和回滚，再开始修改代码。
 
 
-插件会话保活遵循 constitution 3.1.0：`android.session.keepAlive@1` 采用按 publisher+plugin 隔离的加密限时租约，acquire/renew 必须前台发起，后台可查询/释放；到期、更新/回滚、撤销、删除、登出、用户停止和系统限制均清理，恢复不能延长时限或绕过 FGS 限制。执行与验证见 `docs/plugin-session-keepalive-execplan.md`。
+插件会话保活遵循 constitution 3.2.0：`android.session.keepAlive@1` 采用按 publisher+plugin 隔离的加密限时租约，acquire/renew 必须前台发起，后台可查询/释放；到期、更新/回滚、撤销、删除、登出、用户停止和系统限制均清理，恢复不能延长时限或绕过 FGS 限制。执行与验证见 `docs/plugin-session-keepalive-execplan.md`。`android.app.autoStart@1` 仅可放在 `capabilities.optional`，默认关闭，由可见主 Activity 触发打开主应用后的本地入口加载；不支持开机启动或永久保活。

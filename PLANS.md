@@ -242,4 +242,4 @@ Revert only the changes to this ExecPlan section, local-first Agent argument nor
 - No mail send, homework submit, workspace path, or write-boundary safety rules changed.
 
 
-插件会话保活遵循 constitution 3.1.0：`android.session.keepAlive@1` 采用按 publisher+plugin 隔离的加密限时租约，acquire/renew 必须前台发起，后台可查询/释放；到期、更新/回滚、撤销、删除、登出、用户停止和系统限制均清理，恢复不能延长时限或绕过 FGS 限制。执行与验证见 `docs/plugin-session-keepalive-execplan.md`。
+插件会话保活遵循 constitution 3.2.0：`android.session.keepAlive@1` 采用按 publisher+plugin 隔离的加密限时租约，acquire/renew 必须前台发起，后台可查询/释放；到期、更新/回滚、撤销、删除、登出、用户停止和系统限制均清理，恢复不能延长时限或绕过 FGS 限制。执行与验证见 `docs/plugin-session-keepalive-execplan.md`。`android.app.autoStart@1` 仅可放在 `capabilities.optional`，默认关闭，由可见主 Activity 触发打开主应用后的本地入口加载；不支持开机启动或永久保活。

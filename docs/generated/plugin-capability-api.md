@@ -50,6 +50,7 @@ SDK calls use camelCase. Read methods return `{ data, meta }`; `meta` contains `
 | `academic.userCourses.command@1` | beta | `academic.user_courses.write` | eachCall | 15000 ms | `save`, `delete` |
 | `academic.homework.submit@1` | beta | `academic.homework.submit` | eachCall | 60000 ms | `submit` |
 | `mail.send@1` | beta | `mail.send` | eachCall | 60000 ms | `send` |
+| `android.app.autoStart@1` | beta | `android.app.autoStart` | none | 0 ms | declaration only |
 | `android.session.keepAlive@1` | beta | `android.session.keepAlive` | none | 10000 ms | `acquire`, `renew`, `release`, `getStatus` |
 
 ## runtime.lifecycle@1
@@ -3722,6 +3723,12 @@ Response schema:
 ```
 
 Errors: `permission_denied`, `request_timeout`, `user_cancelled`, `idempotency_conflict`, `http_error`.
+
+## android.app.autoStart@1
+
+打开主应用时自动启动插件：允许插件在你打开 BJTU MIS 主应用且主 Activity 可见时加载并在后台运行。默认关闭，不会开机启动或绕过系统权限。
+
+Stability: **beta** · confirmation: **none** · idempotency: **none**
 
 ## android.session.keepAlive@1
 

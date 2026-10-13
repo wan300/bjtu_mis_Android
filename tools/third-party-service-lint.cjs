@@ -110,7 +110,7 @@ function loadManifestSchema(repositoryRoot, result) {
       permissions: registry.capabilities
         .map((item) => item.permission && item.permission.id)
         .filter(Boolean),
-      capabilities: manifestSchema.properties.capabilities.properties.required.items.enum,
+      capabilities: manifestSchema.properties.capabilities.properties.optional.items.enum,
       categories: marketplaceSchema.properties.category.enum,
       configurationTypes: manifestSchema.$defs.configuration.properties.type.enum,
       contractProfile: registry.contractProfile,
@@ -183,6 +183,11 @@ function lintPlugin(root, result, schema, options = {}) {
   }
   for (const capability of [...requiredCapabilities, ...optionalCapabilities]) {
     if (!schema.capabilities.includes(capability)) result.errors.push(`Unknown capability: ${capability}`);
+  }
+  for (const capability of requiredCapabilities) {
+    if (schema.contracts.find((item) => item.id === capability)?.optionalOnly === true) {
+      result.errors.push(`${capability} may only appear in capabilities.optional.`);
+    }
   }
   const duplicates = requiredCapabilities.filter((item) => optionalCapabilities.includes(item));
   if (duplicates.length) {

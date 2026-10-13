@@ -15,9 +15,36 @@ interface LintSchema {
   configurationTypes: string[];
 }
 interface LintModule {
-  lintPlugin(root: string, result: LintResult, schema: LintSchema): LintResult;
+  lintPlugin(root: string, result: LintResult, schema: LintSchema, options?: { requireDist?: boolean }): LintResult;
   loadManifestSchema(repositoryRoot: string, result: LintResult): LintSchema | null;
 }
+
+test('platform lint accepts optional app autostart and rejects required', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bjtu-autostart-platform-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const require = createRequire(import.meta.url);
+  const lint = require(path.resolve('..', '..', 'tools', 'third-party-service-lint.cjs')) as LintModule;
+  const loadResult: LintResult = { errors: [], warnings: [] };
+  const schema = lint.loadManifestSchema(path.resolve('..'), loadResult);
+  assert.ok(schema);
+  const manifest = {
+    schema_version: 3, id: 'bjtu.autostart', name: 'Autostart', version: '1.0.0',
+    entrypoint: 'index.html', icon: 'icon.svg',
+    capabilities: { required: ['runtime.lifecycle@1'], optional: ['android.app.autoStart@1'] }
+  };
+  const file = path.join(root, 'bjtu-plugin.json');
+  await fs.writeFile(file, JSON.stringify(manifest));
+  const optional: LintResult = { errors: [], warnings: [] };
+  lint.lintPlugin(root, optional, schema, { requireDist: false });
+  assert.deepEqual(optional.errors, []);
+  manifest.capabilities.required.push('android.app.autoStart@1');
+  manifest.capabilities.optional.pop();
+  delete (manifest.capabilities as { optional?: string[] }).optional;
+  await fs.writeFile(file, JSON.stringify(manifest));
+  const required: LintResult = { errors: [], warnings: [] };
+  lint.lintPlugin(root, required, schema, { requireDist: false });
+  assert.ok(required.errors.some((error) => error.includes('may only appear in capabilities.optional')));
+});
 
 test('dist digest is stable and sensitive to content and path changes', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bjtu-plugin-digest-'));

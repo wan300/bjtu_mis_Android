@@ -146,6 +146,21 @@ test('generated marketplace schemas are byte-identical', async () => {
   assert.equal(docsSchema, webSchema);
 });
 
+test('app-open autostart is a declaration-only optional capability', async () => {
+  const registry = JSON.parse(await readFile(path.join(toolingRoot, 'contracts', 'capability-contracts.json'), 'utf8'));
+  const capability = registry.capabilities.find((item) => item.id === 'android.app.autoStart@1');
+  assert.equal(capability.optionalOnly, true);
+  assert.equal(capability.runtimeFloor, 4);
+  assert.equal(capability.permission.id, 'android.app.autoStart');
+  assert.equal(capability.confirmation, 'none');
+  assert.equal(capability.idempotency, 'none');
+  assert.deepEqual(capability.methods, []);
+  assert.equal(capability.quota.maxBackgroundRuntimes, 4);
+  const schema = JSON.parse(await readFile(path.join(repositoryRoot, 'docs', 'third-party-service-manifest.schema.json'), 'utf8'));
+  assert.ok(!schema.properties.capabilities.properties.required.items.enum.includes(capability.id));
+  assert.ok(schema.properties.capabilities.properties.optional.items.enum.includes(capability.id));
+});
+
 
 test('keep-alive contract has a distinct runtime floor and closed response schemas', async () => {
   const registry = JSON.parse(await readFile(path.join(toolingRoot, 'contracts', 'capability-contracts.json'), 'utf8'));

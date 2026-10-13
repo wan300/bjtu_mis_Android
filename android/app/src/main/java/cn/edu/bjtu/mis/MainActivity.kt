@@ -82,6 +82,16 @@ class MainActivity : AppCompatActivity() {
         requestedRoute.value = intent.openRoute()
     }
 
+    override fun onStart() {
+        super.onStart()
+        (application as BjtuMisApplication).container.pluginAutomationSupervisor.onAppVisible()
+    }
+
+    override fun onStop() {
+        (application as BjtuMisApplication).container.pluginAutomationSupervisor.onAppHidden()
+        super.onStop()
+    }
+
     private fun Intent?.openRoute(): String? =
         this?.getStringExtra(EXTRA_OPEN_ROUTE)
 

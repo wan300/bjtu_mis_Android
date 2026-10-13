@@ -194,6 +194,7 @@ fun HomeworkDetailScreen(
     initialHomework: HomeworkItem,
     repository: ModuleRepository,
     attachmentRepository: HomeworkAttachmentRepository,
+    initialLoadStrategy: ModuleLoadStrategy = ModuleLoadStrategy.NetworkFirst,
     onOpenAgent: () -> Unit,
 ) {
     val identity = remember(initialHomework) { homeworkIdentityKey(initialHomework) }
@@ -261,7 +262,7 @@ fun HomeworkDetailScreen(
 
     LaunchedEffect(identity, refreshNonce) {
         refreshError = null
-        runCatching { repository.homework("all").data.items }
+        runCatching { repository.homework("all", strategy = if (refreshNonce == 0) initialLoadStrategy else ModuleLoadStrategy.NetworkFirst).data.items }
             .onSuccess { items ->
                 homework = findHomeworkByIdentity(items, identity) ?: homework
             }

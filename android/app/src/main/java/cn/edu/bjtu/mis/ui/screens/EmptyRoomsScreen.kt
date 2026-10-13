@@ -23,6 +23,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -55,6 +56,7 @@ import cn.edu.bjtu.mis.model.TermOption
 import cn.edu.bjtu.mis.ui.components.InfoCard
 import cn.edu.bjtu.mis.ui.components.LoadState
 import cn.edu.bjtu.mis.ui.components.LoadingOrError
+import cn.edu.bjtu.mis.ui.friendlyTimestamp
 import kotlinx.coroutines.CancellationException
 
 @Composable
@@ -63,23 +65,24 @@ fun EmptyRoomsScreen(
     initialLoadStrategy: ModuleLoadStrategy = ModuleLoadStrategy.NetworkFirst,
 ) {
     val scope = rememberCoroutineScope()
-    var term by remember { mutableStateOf("") }
-    var week by remember { mutableStateOf("") }
-    var building by remember { mutableStateOf("") }
-    var room by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(EmptyRoomQuery()) }
+    var loadedQuery by remember { mutableStateOf<EmptyRoomQuery?>(null) }
+    var queryData by remember { mutableStateOf<EmptyRoomData?>(null) }
+    var showAvailableOnly by remember { mutableStateOf(true) }
+    var timeSelection by remember { mutableStateOf(EmptyRoomTimeSelection()) }
     var page by remember { mutableStateOf(0) }
     var state by remember { mutableStateOf<LoadState<ModuleEnvelope<EmptyRoomData>>>(LoadState.Loading) }
 
     val loader = remember(repository, scope) {
-        LatestRequestLoader<ModuleEnvelope<EmptyRoomData>>(scope) { result ->
-            result.onSuccess {
+        LatestRequestLoader<EmptyRoomQueryResult>(scope) { result ->
+            result.onSuccess { response ->
                 page = 0
-                val query = it.data.query
-                term = query["term"].orEmpty().ifBlank { term }
-                week = query["week"].orEmpty().ifBlank { week }
-                building = query["building"].orEmpty().ifBlank { building }
-                room = query["room"].orEmpty().ifBlank { room }
-                state = LoadState.Data(it)
+                val resolved = response.requestedQuery.resolve(response.envelope.data)
+                // A user may have edited a text field while this request was running.
+                if (query.matches(response.requestedQuery)) query = resolved
+                loadedQuery = resolved
+                queryData = response.envelope.data
+                state = LoadState.Data(response.envelope)
             }.onFailure { state = LoadState.Error(it.message ?: "加载失败") }
         }
     }
@@ -88,10 +91,8 @@ fun EmptyRoomsScreen(
         strategy: ModuleLoadStrategy = ModuleLoadStrategy.NetworkFirst,
         resolveDefaultWeek: Boolean = false,
     ) {
-        val requestedTerm = term.ifBlank { null }
-        val requestedWeek = week.ifBlank { null }
-        val requestedBuilding = building.ifBlank { null }
-        val requestedRoom = room.ifBlank { null }
+        val requested = query.normalized()
+        val requestedWeek = requested.week.ifBlank { null }
         state = LoadState.Loading
         loader.load {
             val targetWeek = if (resolveDefaultWeek && requestedWeek == null) {
@@ -102,13 +103,16 @@ fun EmptyRoomsScreen(
                     null
                 }
             } else requestedWeek
-            repository.emptyRooms(
-                term = requestedTerm,
+            val envelope = repository.emptyRooms(
+                term = requested.term.ifBlank { null },
                 week = targetWeek?.ifBlank { null },
-                building = requestedBuilding,
-                room = requestedRoom,
+                // Initial loading may use the server/cache defaults; subsequent queries
+                // must distinguish explicitly clearing a filter from not specifying one.
+                building = requested.building.takeUnless { resolveDefaultWeek && it.isBlank() },
+                room = requested.room.takeUnless { resolveDefaultWeek && it.isBlank() },
                 strategy = strategy,
             )
+            EmptyRoomQueryResult(requested, envelope)
         }
     }
 
@@ -116,63 +120,108 @@ fun EmptyRoomsScreen(
         load(initialLoadStrategy, resolveDefaultWeek = true)
     }
 
-    val queryData = when (val current = state) {
-        is LoadState.Data -> current.value.data
-        else -> null
-    }
-
     LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 EmptyRoomQueryField(
-                    value = term,
-                    onValueChange = { term = it },
+                    value = query.term,
+                    onValueChange = {
+                        query = query.copy(term = it)
+                        if (queryData?.availableTerms?.isNotEmpty() == true) load()
+                    },
                     label = "学期",
                     placeholder = "可留空",
                     options = queryData?.availableTerms.orEmpty(),
                 )
                 EmptyRoomQueryField(
-                    value = week,
-                    onValueChange = { week = it },
+                    value = query.week,
+                    onValueChange = {
+                        query = query.copy(week = it)
+                        if (queryData?.availableWeeks?.isNotEmpty() == true) load()
+                    },
                     label = "周次",
                     options = queryData?.availableWeeks.orEmpty(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
                 EmptyRoomQueryField(
-                    value = building,
-                    onValueChange = { building = it },
+                    value = query.building,
+                    onValueChange = {
+                        query = query.copy(building = it)
+                        if (queryData?.availableBuildings?.isNotEmpty() == true) load()
+                    },
                     label = "教学楼",
                     options = queryData?.availableBuildings.orEmpty(),
                 )
-                OutlinedTextField(value = room, onValueChange = { room = it }, label = { Text("教室") }, modifier = Modifier.fillMaxWidth())
-                OutlinedButton(onClick = { load() }) { Text("刷新空教室") }
+                OutlinedTextField(
+                    value = query.room,
+                    onValueChange = { query = query.copy(room = it) },
+                    label = { Text("教室（可选）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedButton(onClick = { load() }, enabled = state != LoadState.Loading) {
+                    Text("查询 / 刷新空教室")
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = showAvailableOnly, onClick = { showAvailableOnly = true }, label = { Text("按时段找空教室") })
+                    FilterChip(selected = !showAvailableOnly, onClick = { showAvailableOnly = false }, label = { Text("整周视图") })
+                }
             }
         }
         when (val current = state) {
             LoadState.Loading, is LoadState.Error -> item { LoadingOrError(current) }
             is LoadState.Data -> {
                 val envelope = current.value
-                item {
-                    EmptyRoomsMatrix(
-                        data = envelope.data,
-                        page = page,
-                        onPageChange = { page = it },
-                    )
+                if (loadedQuery?.let(query::matches) != true) {
+                    item {
+                        InfoCard("筛选条件已更改") {
+                            Text("请点击查询，查看新条件对应的空教室。")
+                        }
+                    }
+                } else {
+                    item {
+                        Text(
+                            text = "数据更新：${friendlyTimestamp(envelope.syncedAt)} · 以教务占用记录为准",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    item {
+                        if (showAvailableOnly) {
+                            EmptyRoomAvailabilityResults(
+                                data = envelope.data,
+                                selection = timeSelection,
+                                onSelectionChange = { timeSelection = it },
+                            )
+                        } else {
+                            EmptyRoomsMatrix(
+                                data = envelope.data,
+                                page = page,
+                                onPageChange = { page = it },
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
 
+private data class EmptyRoomQueryResult(
+    val requestedQuery: EmptyRoomQuery,
+    val envelope: ModuleEnvelope<EmptyRoomData>,
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EmptyRoomQueryField(
+internal fun EmptyRoomQueryField(
     value: String,
     onValueChange: (String) -> Unit,
     label: String,
     options: List<TermOption>,
     placeholder: String? = null,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    modifier: Modifier = Modifier,
 ) {
     if (options.isEmpty()) {
         OutlinedTextField(
@@ -182,7 +231,7 @@ private fun EmptyRoomQueryField(
             placeholder = placeholder?.let { { Text(it) } },
             singleLine = true,
             keyboardOptions = keyboardOptions,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = modifier.fillMaxWidth(),
         )
         return
     }
@@ -193,6 +242,7 @@ private fun EmptyRoomQueryField(
     ExposedDropdownMenuBox(
         expanded = expanded,
         onExpandedChange = { expanded = !expanded },
+        modifier = modifier,
     ) {
         OutlinedTextField(
             value = selectedLabel,
@@ -226,7 +276,7 @@ private fun EmptyRoomQueryField(
 private fun emptyRoomOptionLabel(option: TermOption): String =
     option.label.ifBlank { option.value.ifBlank { "不限" } }
 
-private const val EmptyRoomsPageSize = 20
+internal const val EmptyRoomsPageSize = 20
 private const val EmptyRoomStateFree = "free"
 private const val EmptyRoomStateBusy = "busy"
 private const val EmptyRoomStateNotice = "notice"
@@ -501,7 +551,7 @@ private fun EmptyRoomAvailabilityRow(
 }
 
 @Composable
-private fun EmptyRoomPager(
+internal fun EmptyRoomPager(
     currentPage: Int,
     pageCount: Int,
     totalRooms: Int,

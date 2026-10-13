@@ -135,6 +135,7 @@ export const getLocalAgentMaxToolCallRetries = (env: JsonRecord = import.meta.en
 };
 
 export const shouldUseLocalAgentLoop = (body: JsonRecord) =>
+	supportsNativeAgentTools() ||
 	body?.params?.function_calling === 'native' ||
 	body?.features?.android_device_tools === true ||
 	shouldUseLocalCodeInterpreterAgentLoop(body) ||

@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
 const val THIRD_PARTY_SERVICE_SCHEMA_VERSION = 3
-const val THIRD_PARTY_RUNTIME_VERSION = 3
+const val THIRD_PARTY_RUNTIME_VERSION = 4
 const val THIRD_PARTY_BRIDGE_PROTOCOL_VERSION = 2
 const val THIRD_PARTY_CONTRACT_PROFILE = "contract_v1"
 const val THIRD_PARTY_MANIFEST_FILE_NAME = "bjtu-plugin.json"

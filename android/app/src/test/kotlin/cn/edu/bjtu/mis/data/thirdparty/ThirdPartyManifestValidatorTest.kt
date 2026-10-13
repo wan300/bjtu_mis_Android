@@ -10,6 +10,19 @@ import org.junit.Test
 
 class ThirdPartyManifestValidatorTest {
     @Test
+    fun appAutostartIsOnlyAllowedAsOptionalDeclaration() {
+        val manifest = ThirdPartyManifestValidator.decodeAndValidate(
+            minimalManifest(optional = """["android.app.autoStart@1"]"""),
+        )
+        assertEquals(listOf("android.app.autoStart@1"), manifest.optionalCapabilities)
+        assertThrows(ThirdPartyServiceException::class.java) {
+            ThirdPartyManifestValidator.decodeAndValidate(
+                minimalManifest(required = """["runtime.lifecycle@1","android.app.autoStart@1"]"""),
+            )
+        }
+    }
+
+    @Test
     fun acceptsMinimalContractManifestAndDerivesHostInvariants() {
         val manifest = ThirdPartyManifestValidator.decodeAndValidate(minimalManifest())
 

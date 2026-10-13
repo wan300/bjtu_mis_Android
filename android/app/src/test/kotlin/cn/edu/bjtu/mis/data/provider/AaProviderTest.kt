@@ -6,6 +6,7 @@ import cn.edu.bjtu.mis.model.CourseSelectionTarget
 import cn.edu.bjtu.mis.model.DefaultCourseSelectionGroupNames
 import cn.edu.bjtu.mis.model.ScoreItem
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
@@ -14,6 +15,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AaProviderTest {
+    @Test
+    fun emptyRoomQuerySendsAndPreservesClearedFilters() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(text("empty_rooms.html")))
+            server.start()
+
+            val envelope = provider(server).fetchEmptyRooms(week = "8", building = "", room = "")
+
+            val url = server.takeRequest().requestUrl!!
+            assertEquals("/classroom/timeholdresult/room_view/", url.encodedPath)
+            assertEquals("8", url.queryParameter("zc"))
+            assertEquals("", url.queryParameter("jxlh"))
+            assertEquals("", url.queryParameter("jash"))
+            assertEquals("", envelope.data.query["building"])
+            assertEquals("", envelope.sourceParams["building"]?.jsonPrimitive?.content)
+            assertEquals("", envelope.sourceParams["room"]?.jsonPrimitive?.content)
+        }
+    }
+
     @Test
     fun mergeScoreItemsDeduplicatesAcrossProgressiveTerms() {
         val duplicate = score("2025-2026-1", "软件工程", "90")

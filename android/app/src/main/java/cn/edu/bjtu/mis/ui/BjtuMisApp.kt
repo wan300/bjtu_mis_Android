@@ -85,6 +85,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import cn.edu.bjtu.mis.R
+import cn.edu.bjtu.mis.data.agent.tools.AgentPageTarget
 import cn.edu.bjtu.mis.data.provider.SessionValidationPolicy
 import cn.edu.bjtu.mis.data.repository.ModuleLoadStrategy
 import cn.edu.bjtu.mis.data.sync.SessionKeepAliveForegroundService
@@ -214,6 +215,7 @@ fun BjtuMisApp(
     var updateCheckStarted by remember { mutableStateOf(false) }
     var pendingUpdate by remember { mutableStateOf<AppUpdateInfo?>(null) }
     var homeworkDetailTarget by remember { mutableStateOf<HomeworkItem?>(null) }
+    var agentPageTarget by remember { mutableStateOf<AgentPageTarget?>(null) }
     var homeworkDetailReturnRoute by rememberSaveable { mutableStateOf(ModuleKeys.Homework) }
     var initialLoadStrategyConsumed by rememberSaveable { mutableStateOf(false) }
     var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
@@ -311,6 +313,7 @@ fun BjtuMisApp(
         error.message?.takeIf { it.isNotBlank() } ?: "自动登录失败，请检查网络后重试。"
 
     fun navigateMain(route: String) {
+        agentPageTarget = null
         val target = normalizeRoute(route)
         current = target
         mainTab = target
@@ -318,6 +321,7 @@ fun BjtuMisApp(
     }
 
     fun navigateModule(route: String) {
+        agentPageTarget = null
         val target = normalizeRoute(route)
         if (target in MainRoutes) {
             navigateMain(target)
@@ -473,6 +477,19 @@ fun BjtuMisApp(
         }
     }
 
+    LaunchedEffect(container.agentNavigationRequests, ready) {
+        if (ready == true) container.agentNavigationRequests.requests.collect { request ->
+            if (request != null) {
+                // Only typed, native-validated targets reach this path; no routes from model strings.
+                container.agentNavigationRequests.consume(request.id)
+                val target = request.target
+                if (target.homework != null) openHomeworkDetail(target.homework, ModuleKeys.OpenWebUiAgent)
+                else navigateModule(target.route)
+                agentPageTarget = target
+            }
+        }
+    }
+
     pendingUpdate?.takeIf { !showAutoLoginFailedDialog }?.let { update ->
         AppUpdateAvailableDialog(
             update = update,
@@ -616,6 +633,7 @@ fun BjtuMisApp(
                                 initialHomework = homework,
                                 repository = container.moduleRepository,
                                 attachmentRepository = container.homeworkAttachmentRepository,
+                                initialLoadStrategy = if (agentPageTarget?.homework != null) ModuleLoadStrategy.CacheOnly else ModuleLoadStrategy.NetworkFirst,
                                 onOpenAgent = { navigateModule(ModuleKeys.OpenWebUiAgent) },
                             )
                         } ?: Text("作业详情不可用")
@@ -637,7 +655,8 @@ fun BjtuMisApp(
                                 ModuleRoute(
                                     route = route,
                                     container = container,
-                                    initialLoadStrategy = routeInitialLoadStrategy,
+                                    initialLoadStrategy = if (agentPageTarget?.route == route) ModuleLoadStrategy.CacheOnly else routeInitialLoadStrategy,
+                                    agentPageTarget = agentPageTarget,
                                     onNavigate = ::navigateModule,
                                     onOpenHomeworkDetail = ::openHomeworkDetail,
                                 )
@@ -915,6 +934,7 @@ private fun ModuleRoute(
     route: String,
     container: AppContainer,
     initialLoadStrategy: ModuleLoadStrategy = ModuleLoadStrategy.NetworkFirst,
+    agentPageTarget: AgentPageTarget? = null,
     onNavigate: (String) -> Unit,
     onOpenHomeworkDetail: (HomeworkItem, String) -> Unit,
 ) {
@@ -943,6 +963,7 @@ private fun ModuleRoute(
             repository = container.moduleRepository,
             employmentRepository = container.employmentConsultationRepository,
             employmentCalendarSyncStore = container.employmentCalendarSyncStore,
+            todoReminders = container.todoReminders,
             initialLoadStrategy = initialLoadStrategy,
             onOpenHomework = { onOpenHomeworkDetail(it, ModuleKeys.Calendar) },
         )
@@ -959,7 +980,8 @@ private fun ModuleRoute(
             employmentCalendarSyncStore = container.employmentCalendarSyncStore,
             initialLoadStrategy = initialLoadStrategy,
         )
-        ModuleKeys.CourseResources -> CourseResourcesScreen(container.courseResourceRepository, initialLoadStrategy)
+        ModuleKeys.CourseResources -> CourseResourcesScreen(container.courseResourceRepository, initialLoadStrategy,
+            initialCourseId = agentPageTarget?.courseId.orEmpty(), initialFolderId = agentPageTarget?.folderId ?: "0")
         ModuleKeys.CourseReplay -> CourseReplayScreen(container.courseReplayRepository, container.httpClient.client, initialLoadStrategy)
         ModuleKeys.TeachingAssessment -> TeachingAssessmentScreen(container.moduleRepository, initialLoadStrategy)
         ModuleKeys.EmptyRooms -> EmptyRoomsScreen(container.moduleRepository, initialLoadStrategy)

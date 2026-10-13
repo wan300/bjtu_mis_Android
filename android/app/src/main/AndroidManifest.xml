@@ -88,6 +88,15 @@
             android:foregroundServiceType="dataSync" />
 
         <service
+            android:name=".data.thirdparty.PluginAutoStartForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-selected plugin app auto-start runtime" />
+        </service>
+
+        <service
             android:name=".data.thirdparty.PluginAccessibilityService"
             android:description="@string/accessibility_service_description"
             android:exported="true"

@@ -21,7 +21,10 @@ class ThirdPartyServiceApiRegistryTest {
     @Test
     fun everyGeneratedCapabilityHasAnAndroidProvider() {
         assertEquals(
-            ThirdPartyCapabilityRegistry.capabilities.map { it.id }.toSet(),
+            ThirdPartyCapabilityRegistry.capabilities
+                .filterNot { it.optionalOnly }
+                .map { it.id }
+                .toSet(),
             registry().registeredCapabilityIds(),
         )
     }
@@ -56,7 +59,7 @@ class ThirdPartyServiceApiRegistryTest {
         val result = response["result"]!!.jsonObject
         assertEquals(2, result["protocolVersion"]!!.jsonPrimitive.content.toInt())
         assertEquals("contract_v1", result["contractProfile"]!!.jsonPrimitive.content)
-        assertEquals(3, result["runtimeFloor"]!!.jsonPrimitive.content.toInt())
+        assertEquals(4, result["runtimeFloor"]!!.jsonPrimitive.content.toInt())
         assertEquals(
             setOf(
                 "protocolVersion",

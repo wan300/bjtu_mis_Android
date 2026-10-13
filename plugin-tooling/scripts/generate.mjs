@@ -82,6 +82,9 @@ function validateRegistry(value) {
       throw new Error(`Invalid capability id: ${capability.id}`);
     }
     if (ids.has(capability.id)) throw new Error(`Duplicate capability id: ${capability.id}`);
+    if (capability.optionalOnly === true && (capability.methods?.length ?? 0) > 0) {
+      throw new Error(`Optional-only capability ${capability.id} cannot declare methods.`);
+    }
     ids.add(capability.id);
     const methodNames = new Set();
     for (const method of capability.methods ?? []) {
@@ -121,6 +124,9 @@ function validateRegistry(value) {
 
 function buildManifestSchema(value) {
   const capabilityIds = value.capabilities.map((item) => item.id);
+  const requiredCapabilityIds = value.capabilities
+    .filter((item) => item.optionalOnly !== true)
+    .map((item) => item.id);
   const dataCapabilities = ['storage.kv@2', 'storage.blob@1'];
   const capabilityContains = (ids) => ({
     anyOf: [
@@ -198,7 +204,7 @@ function buildManifestSchema(value) {
               const: 'runtime.lifecycle@1'
             },
             items: {
-              enum: capabilityIds
+              enum: requiredCapabilityIds
             }
           },
           optional: {
@@ -528,6 +534,7 @@ function generateKotlin(value) {
         `            id = ${kotlinString(capability.id)},`,
         `            stability = ${kotlinString(capability.stability)},`,
         `            runtimeFloor = ${capability.runtimeFloor},`,
+        `            optionalOnly = ${capability.optionalOnly === true},`,
         `            permission = ${capability.permission ? kotlinString(capability.permission.id) : 'null'},`,
         `            permissionTitle = ${capability.permission ? kotlinString(capability.permission.title) : 'null'},`,
         `            permissionDescription = ${capability.permission ? kotlinString(capability.permission.description) : 'null'},`,
@@ -611,6 +618,7 @@ data class GeneratedCapabilityDescriptor(
     val id: String,
     val stability: String,
     val runtimeFloor: Int,
+    val optionalOnly: Boolean,
     val permission: String?,
     val permissionTitle: String?,
     val permissionDescription: String?,

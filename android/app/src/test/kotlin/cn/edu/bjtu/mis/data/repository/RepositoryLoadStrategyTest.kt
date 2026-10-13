@@ -1,6 +1,19 @@
 package cn.edu.bjtu.mis.data.repository
 
 import android.content.ContextWrapper
+import cn.edu.bjtu.mis.data.agent.tools.RepositoryAcademicAgentGateway
+import cn.edu.bjtu.mis.data.agent.tools.RepositoryAgentPageGateway
+import cn.edu.bjtu.mis.data.agent.tools.AgentNavigationRequests
+import cn.edu.bjtu.mis.model.HomeworkAttachment
+import cn.edu.bjtu.mis.model.TimetableData
+import cn.edu.bjtu.mis.model.CourseEntry
+import cn.edu.bjtu.mis.model.UserCourseDraft
+import cn.edu.bjtu.mis.model.UserTodoDraft
+import cn.edu.bjtu.mis.model.UserCourseDurationType
+import java.time.LocalDate
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
 import cn.edu.bjtu.mis.data.AppJson
 import cn.edu.bjtu.mis.data.captcha.CaptchaAnswerSolver
 import cn.edu.bjtu.mis.data.captcha.CaptchaSolveResult
@@ -21,6 +34,8 @@ import cn.edu.bjtu.mis.data.security.CredentialStore
 import cn.edu.bjtu.mis.data.security.LoginCredentials
 import cn.edu.bjtu.mis.data.security.SessionCookieStore
 import cn.edu.bjtu.mis.model.CalendarData
+import cn.edu.bjtu.mis.model.EmptyRoomData
+import cn.edu.bjtu.mis.model.EmptyRoomRow
 import cn.edu.bjtu.mis.model.EmploymentFilterOptions
 import cn.edu.bjtu.mis.model.EmploymentConsultationData
 import cn.edu.bjtu.mis.model.CoverageLevel
@@ -44,6 +59,192 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RepositoryLoadStrategyTest {
+    @Test
+    fun nativeTodosUseConditionalWritesAndCleanRemindersForEveryMutation() = runBlocking {
+        MockWebServer().use { server ->
+            val revoked = mutableListOf<Long>()
+            val manager = sessionManager(server)
+            val sync = SyncRepository(FakeBjtuMisDao(), manager, beforeTodoChange = { revoked += it })
+            val modules = ModuleRepository(sync, manager)
+            val id = modules.saveUserTodo(UserTodoDraft(title = "Example", date = "2026-10-13", note = "Note"))
+            val first = modules.userTodos().single()
+            assertTrue(revoked.isEmpty())
+            modules.saveUserTodo(UserTodoDraft(id, "Edited", first.date, first.note), first.updatedAt)
+            val second = modules.userTodos().single()
+            assertTrue(first.updatedAt != second.updatedAt)
+            assertEquals(first.createdAt, second.createdAt)
+            try {
+                modules.saveUserTodo(UserTodoDraft(id, "Stale", first.date), first.updatedAt)
+                org.junit.Assert.fail("Expected conflict")
+            } catch (error: TodoMutationException) { assertEquals("todo_conflict", error.code) }
+            assertEquals(listOf(id), revoked)
+            assertEquals("Edited", modules.userTodos().single().title)
+            modules.setUserTodoDone(id, true)
+            val done = modules.userTodos().single()
+            assertTrue(done.done)
+            assertTrue(done.updatedAt != second.updatedAt)
+            try { modules.deleteUserTodo(id, second.updatedAt); org.junit.Assert.fail() }
+            catch (error: TodoMutationException) { assertEquals("todo_conflict", error.code) }
+            modules.deleteUserTodo(id, done.updatedAt)
+            assertEquals(listOf(id, id, id), revoked)
+            assertTrue(modules.userTodos().isEmpty())
+            try { modules.saveUserTodo(UserTodoDraft(id, "Missing", first.date)); org.junit.Assert.fail() }
+            catch (error: TodoMutationException) { assertEquals("todo_not_found", error.code) }
+            assertEquals(0, server.requestCount)
+        }
+    }
+
+    @Test
+    fun reminderCleanupFailurePreventsNativeTodoMutation() = runBlocking {
+        MockWebServer().use { server ->
+            val manager = sessionManager(server)
+            val sync = SyncRepository(FakeBjtuMisDao(), manager, beforeTodoChange = { error("cleanup unavailable") })
+            val id = sync.saveUserTodo(UserTodoDraft(title = "Example", date = "2026-10-13"))
+            try { sync.setUserTodoDone(id, true); org.junit.Assert.fail() } catch (_: IllegalStateException) { }
+            assertFalse(sync.userTodos().single().done)
+            try { sync.deleteUserTodo(id); org.junit.Assert.fail() } catch (_: IllegalStateException) { }
+            assertEquals(1, sync.userTodos().size)
+        }
+    }
+
+    @Test
+    fun calendarKeepsNativeTodosVisibleWithoutCampusCacheOrNetwork() = runBlocking {
+        MockWebServer().use { server ->
+            val manager = sessionManager(server)
+            val sync = SyncRepository(FakeBjtuMisDao(), manager)
+            val modules = ModuleRepository(sync, manager)
+            val id = modules.saveUserTodo(UserTodoDraft(title = "Example", date = "2026-10-13"))
+            val dashboard = modules.calendarDashboard(ModuleLoadStrategy.CacheOnly)
+            assertEquals(id, dashboard.todos.single().id)
+            assertEquals(3, dashboard.campusErrors.size)
+            assertEquals("native_local", dashboard.calendarEnvelope.sourceSystem)
+            assertTrue(dashboard.calendarEnvelope.data.items.isEmpty())
+            assertEquals(0, server.requestCount)
+        }
+    }
+
+    @Test
+    fun agentNavigationRequiresExactCachedHomeworkAndResourceListingWithoutNetwork() = runBlocking {
+        MockWebServer().use { server ->
+            val manager = sessionManager(server)
+            val sync = SyncRepository(FakeBjtuMisDao(), manager)
+            val modules = ModuleRepository(sync, manager)
+            val gateway = RepositoryAgentPageGateway(modules, AgentNavigationRequests())
+            sync.saveSnapshot(ModuleKeys.Homework, ModuleEnvelope(
+                module = ModuleKeys.Homework, sourceSystem = "test", coverage = CoverageLevel.Verified,
+                data = HomeworkData(items = listOf(HomeworkItem(1, "Example", 2, title = "Example", status = "open", subType = 0))),
+            ))
+            assertEquals(1, gateway.homework(2, 1)?.homeworkId)
+            org.junit.Assert.assertNull(gateway.homework(3, 1))
+            sync.saveSnapshot(ModuleKeys.CourseResources, ModuleEnvelope(
+                module = ModuleKeys.CourseResources, sourceSystem = "test", coverage = CoverageLevel.Verified,
+                sourceParams = buildJsonObject {
+                    put("requested_course_id", "2"); put("course_id", "2")
+                    put("folder_id", "4"); put("category_key", "all")
+                },
+                data = CourseResourcesData(selectedCourseId = 2, folderId = "4"),
+            ))
+            assertTrue(gateway.resourceFolderExists("2", "4"))
+            for ((courseId, folderId) in listOf("2" to "0", "3" to "4")) {
+                try { gateway.resourceFolderExists(courseId, folderId); org.junit.Assert.fail() }
+                catch (_: LocalSnapshotMissingException) { }
+            }
+            assertEquals(0, server.requestCount)
+        }
+    }
+
+    @Test
+    fun campusAgentCacheQueriesNeverRequestNetworkOrExposeRawHomeworkContent() = runBlocking {
+        MockWebServer().use { server ->
+            val manager = sessionManager(server)
+            val sync = SyncRepository(FakeBjtuMisDao(), manager)
+            val gateway = RepositoryAcademicAgentGateway(ModuleRepository(sync, manager), SessionRepository(manager))
+            sync.saveSnapshot(ModuleKeys.Homework, ModuleEnvelope(
+                module = ModuleKeys.Homework, sourceSystem = "VE", coverage = CoverageLevel.Verified,
+                syncedAt = "2026-10-12T03:00:00Z",
+                data = HomeworkData(items = listOf(HomeworkItem(
+                    homeworkId = 1, courseId = 2, course = "Example course", title = "Example homework",
+                    contentExcerpt = "UNTRUSTED_BODY_SENTINEL", requirementText = "PRIVATE_REQUIREMENTS_SENTINEL",
+                    dueAt = "2026-10-13 12:00:00", status = "open", subType = 0,
+                    attachments = listOf(HomeworkAttachment("attachment-1", "example.pdf", "https://example.invalid/private")),
+                ))),
+            ))
+            val section = gateway.load(ModuleKeys.Homework, LocalDate.parse("2026-10-12"), LocalDate.parse("2026-10-18"), false)
+            assertTrue(section.fromCache)
+            assertEquals("2026-10-12T03:00:00Z", section.syncedAt)
+            assertEquals("2026-10-13", section.items.single()["date"]!!.jsonPrimitive.content)
+            assertFalse(section.items.toString().contains("SENTINEL"))
+            assertFalse(section.items.toString().contains("https://"))
+            assertEquals(0, server.requestCount)
+            val status = gateway.status()
+            assertEquals(4, status["modules"]!!.jsonArray.size)
+            assertFalse(status.containsKey("detail"))
+            assertFalse(status.toString().contains("payload"))
+        }
+    }
+
+    @Test
+    fun campusAgentTimetableRetainsNativeCustomCoursesAndOneBasedWeekdays() = runBlocking {
+        MockWebServer().use { server ->
+            val manager = sessionManager(server)
+            val sync = SyncRepository(FakeBjtuMisDao(), manager)
+            sync.saveSnapshot(ModuleKeys.Timetable, ModuleEnvelope(
+                module = ModuleKeys.Timetable, sourceSystem = "AA", coverage = CoverageLevel.Verified,
+                data = TimetableData(entries = listOf(CourseEntry("周二", "1", courseCode = "example", courseName = "Campus course"))),
+            ))
+            sync.saveUserCourse(UserCourseDraft(
+                courseName = "Local course", weekday = "周一", weekdayIndex = 0,
+                period = "1", periodNumber = 1, startWeek = 1, endWeek = 16,
+                durationType = UserCourseDurationType.LongTerm,
+            ))
+            val gateway = RepositoryAcademicAgentGateway(ModuleRepository(sync, manager), SessionRepository(manager))
+            val section = gateway.load(ModuleKeys.Timetable, LocalDate.parse("2026-10-12"), LocalDate.parse("2026-10-18"), false)
+            assertEquals(2, section.items.size)
+            assertEquals(2, section.items.first()["weekdayIndex"]!!.jsonPrimitive.int)
+            assertEquals(1, section.items.last()["weekdayIndex"]!!.jsonPrimitive.int)
+            assertEquals(0, server.requestCount)
+        }
+    }
+
+    @Test
+    fun emptyRoomCacheRequiresTheSameBuildingWeekAndRoomFilters() = runBlocking {
+        MockWebServer().use { server ->
+            val sync = SyncRepository(FakeBjtuMisDao(), sessionManager(server))
+            val repository = ModuleRepository(sync, sessionManager(server))
+            val envelope = ModuleEnvelope(
+                module = ModuleKeys.EmptyRooms, sourceSystem = "test", coverage = CoverageLevel.Verified,
+                sourceParams = buildJsonObject {
+                    put("week", "8")
+                    put("building", "SX")
+                    put("room", "")
+                },
+                data = EmptyRoomData(rooms = listOf(EmptyRoomRow("SX101"))),
+            )
+            sync.saveSnapshot(ModuleKeys.EmptyRooms, envelope)
+
+            assertEquals(envelope.data, repository.emptyRooms(
+                week = "8", building = "SX", room = "", strategy = ModuleLoadStrategy.CacheOnly,
+            ).data)
+            for ((week, building, room) in listOf(
+                Triple("8", "SY", ""), Triple("8", "", ""), Triple("9", "SX", ""), Triple("8", "SX", "101"),
+            )) {
+                val error = runCatching {
+                    repository.emptyRooms(week = week, building = building, room = room, strategy = ModuleLoadStrategy.CacheOnly)
+                }.exceptionOrNull()
+                assertTrue(error is LocalSnapshotMissingException)
+            }
+            sync.saveSnapshot(ModuleKeys.EmptyRooms, envelope.copy(sourceParams = buildJsonObject {
+                put("week", "8")
+                put("building", "")
+                put("room", "")
+            }))
+            assertEquals(envelope.data, repository.emptyRooms(
+                week = "8", building = "", room = "", strategy = ModuleLoadStrategy.CacheOnly,
+            ).data)
+            assertEquals(0, server.requestCount)
+        }
+    }
+
     @Test
     fun employmentStrategiesShareCacheAndNetworkFallback() = runBlocking {
         MockWebServer().use { server ->

@@ -25,6 +25,8 @@ desktop.ini
 # Automation captures and runtime state
 /captures/
 /runtime/
+/.codex/
+/tmp_media3_ui/
 /.playwright-mcp/
 .github/java-upgrade/
 

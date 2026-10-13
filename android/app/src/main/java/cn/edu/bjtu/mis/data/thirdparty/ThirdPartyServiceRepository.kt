@@ -28,6 +28,33 @@ class ThirdPartyServiceRepository(
             size > ReadmeCacheLimit
     }
     private var bundledInstallChecked = false
+    internal var onAutoStartChanged: ((ThirdPartyService) -> Unit)? = null
+
+    suspend fun setAppAutoStartEnabled(serviceId: String, enabled: Boolean): ThirdPartyService {
+        val service = getService(serviceId) ?: throw ThirdPartyServiceException("插件不存在：$serviceId")
+        if (enabled && (!service.canRun || service.publisherSubjectId.isBlank() ||
+                PluginAppAutoStartPolicy.CAPABILITY !in service.manifest.optionalCapabilities)) {
+            throw ThirdPartyServiceException("请先完成插件授权，且插件必须声明可选自启能力")
+        }
+        val grants = if (enabled) service.grantedCapabilities + PluginAppAutoStartPolicy.CAPABILITY
+            else service.grantedCapabilities - PluginAppAutoStartPolicy.CAPABILITY
+        dao.updateGrantState(serviceId, AppJson.encodeToString(grants.sorted()),
+            service.enabled, service.needsReview, nowIso())
+        val updated = getService(serviceId) ?: throw ThirdPartyServiceException("插件不存在：$serviceId")
+        onAutoStartChanged?.invoke(updated)
+        return updated
+    }
+
+    internal suspend fun clearAppAutoStart(publisher: String, plugin: String) {
+        val service = getService(plugin) ?: return
+        if (service.publisherSubjectId == publisher && PluginAppAutoStartPolicy.CAPABILITY in service.grantedCapabilities) {
+            setAppAutoStartEnabled(plugin, false)
+        }
+    }
+
+    internal suspend fun clearAllAppAutoStart() {
+        listServices().forEach { clearAppAutoStart(it.publisherSubjectId, it.serviceId) }
+    }
 
     suspend fun ensureBundledServicesInstalled() {
         retryPendingCleanup()
@@ -350,8 +377,10 @@ class ThirdPartyServiceRepository(
                 service.serviceId,
             )
         }
-        return getService(service.serviceId)
+        val updated = getService(service.serviceId)
             ?: throw ThirdPartyServiceException("插件不存在：${service.serviceId}")
+        onAutoStartChanged?.invoke(updated)
+        return updated
     }
 
     suspend fun getConfiguration(serviceId: String): Map<String, String> {

@@ -35,7 +35,13 @@ class ThirdPartyManifestSchemaSyncTest {
             .map { it.jsonPrimitive.contentOrNull.orEmpty() }
             .toSet()
 
-        assertEquals(ThirdPartyCapabilityRegistry.capabilities.map { it.id }.toSet(), enumValues)
+        assertEquals(
+            ThirdPartyCapabilityRegistry.capabilities
+                .filterNot { it.optionalOnly }
+                .map { it.id }
+                .toSet(),
+            enumValues,
+        )
     }
 
     private fun repoFile(relativePath: String): File {

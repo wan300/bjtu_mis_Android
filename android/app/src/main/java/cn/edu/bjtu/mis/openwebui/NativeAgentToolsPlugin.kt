@@ -1,6 +1,10 @@
 package cn.edu.bjtu.mis.openwebui
 
 import android.content.ContentValues
+import android.app.AlertDialog
+import android.widget.ScrollView
+import android.widget.TextView
+import androidx.lifecycle.Lifecycle
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -10,6 +14,10 @@ import cn.edu.bjtu.mis.BjtuMisApplication
 import cn.edu.bjtu.mis.data.AppJson
 import cn.edu.bjtu.mis.data.agent.model.AgentAttachment
 import cn.edu.bjtu.mis.data.agent.tools.AgentGeneratedFile
+import cn.edu.bjtu.mis.data.agent.tools.AgentTool
+import cn.edu.bjtu.mis.data.agent.tools.AgentToolExecutor
+import cn.edu.bjtu.mis.data.agent.tools.AgentToolPolicyException
+import cn.edu.bjtu.mis.data.agent.tools.isTrustedAgentOrigin
 import cn.edu.bjtu.mis.data.agent.tools.ToolArtifact
 import cn.edu.bjtu.mis.data.agent.tools.WorkspaceImportSource
 import cn.edu.bjtu.mis.data.agent.tools.agentGeneratedFilePreviewKind
@@ -28,17 +36,25 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.net.URLConnection
 import java.util.UUID
+import kotlin.coroutines.resume
 
 @CapacitorPlugin(name = "NativeAgentTools")
 class NativeAgentToolsPlugin : Plugin() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val toolExecutor by lazy { AgentToolExecutor(container().agentToolRegistry) }
+    private var confirmationDialog: AlertDialog? = null
 
     @PluginMethod
     fun consumePendingHomeworkDraft(call: PluginCall) {
@@ -72,6 +88,7 @@ class NativeAgentToolsPlugin : Plugin() {
                     JSObject()
                         .put("type", "function")
                         .put("requiresWorkspace", tool.requiresWorkspace)
+                        .put("policy", JSONObject(tool.policy.toJson().toString()))
                         .put("function", function)
                 )
             }
@@ -96,19 +113,32 @@ class NativeAgentToolsPlugin : Plugin() {
             return
         }
 
-        val argumentsJson = call.getObject("arguments")?.toString()
-            ?: call.getString("arguments")
-            ?: "{}"
-
         scope.launch {
             try {
-                val arguments = AppJson.parseToJsonElement(argumentsJson).jsonObject
-                val tool = container().agentToolRegistry.get(nativeName)
-                    ?: throw IllegalArgumentException("Native agent tool not registered: $nativeName")
-                if (tool.requiresWorkspace && workspaceId.isBlank()) {
-                    throw IllegalArgumentException("workspaceId is required")
+                val trustedPage = withContext(Dispatchers.Main) {
+                    isTrustedAgentOrigin(bridge.webView.url, bridge.scheme, bridge.host)
                 }
-                val result = tool.execute(workspaceId, arguments)
+                if (!trustedPage) throw AgentToolPolicyException("origin_forbidden", "Agent 工具仅可由本地页面调用")
+                val argumentsJson = when (val raw = call.data.opt("arguments")) {
+                    null -> "{}"
+                    is JSONObject -> raw.toString()
+                    is String -> raw
+                    else -> throw AgentToolPolicyException("invalid_arguments", "工具参数必须为 JSON 对象")
+                }
+                if (argumentsJson.toByteArray().size > 256 * 1024) throw AgentToolPolicyException("input_too_large", "工具参数过大")
+                val arguments = try {
+                    AppJson.parseToJsonElement(argumentsJson).jsonObject
+                } catch (_: IllegalArgumentException) {
+                    throw AgentToolPolicyException("invalid_arguments", "工具参数必须为有效 JSON 对象")
+                }
+                val result = toolExecutor.execute(
+                    name = nativeName,
+                    workspaceId = workspaceId,
+                    arguments = arguments,
+                    requestId = call.getString("requestId"),
+                    isForeground = { withContext(Dispatchers.Main) { isAgentForeground() } },
+                    confirm = ::confirmToolExecution,
+                )
                 val response = JSObject()
                     .put("toolName", toolName)
                     .put("nativeToolName", nativeName)
@@ -117,6 +147,16 @@ class NativeAgentToolsPlugin : Plugin() {
                 result.stdout?.let { response.put("stdout", it) }
                 result.stderr?.let { response.put("stderr", it) }
                 call.resolve(response)
+                if (nativeName == "app.open_page") {
+                    result.output["navigationRequestId"]?.jsonPrimitive?.content?.let { id ->
+                        withContext(Dispatchers.Main) {
+                            if (isAgentForeground()) container().agentNavigationRequests.dispatch(id)
+                        }
+                    }
+                }
+            } catch (error: AgentToolPolicyException) {
+                call.resolve(JSObject().put("toolName", toolName).put("output",
+                    JSObject().put("ok", false).put("error", error.code).put("message", error.message)))
             } catch (error: Exception) {
                 call.reject(error.message ?: "Native agent tool failed", error)
             }
@@ -261,7 +301,87 @@ class NativeAgentToolsPlugin : Plugin() {
         }
     }
 
+    private fun isAgentForeground(): Boolean =
+        activity != null && !activity.isFinishing && !activity.isDestroyed &&
+            activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+            bridge.webView.isShown
+
+    private suspend fun confirmToolExecution(tool: AgentTool, arguments: JsonObject): Boolean {
+        val todoId = if (tool.policy.dataScope == "todo") arguments["id"]?.jsonPrimitive?.longOrNull else null
+        val targetSummary = if (todoId != null) withContext(Dispatchers.IO) {
+            container().moduleRepository.userTodos().find { it.id == todoId }?.let {
+                "当前待办：${it.title.take(200)}\n日期：${it.date}\n状态：${if (it.done) "已完成" else "未完成"}\n\n"
+            } ?: "当前待办不存在；取消提醒仍可用于清理残留通知。\n\n"
+        } else ""
+        return withContext(Dispatchers.Main) {
+            if (!isAgentForeground()) return@withContext false
+            suspendCancellableCoroutine { continuation ->
+                val privacy = if (tool.policy.dataScope in setOf("academic", "mail", "todo"))
+                    "查询结果可能发送给当前配置的模型服务。仅在同意分享这些数据时继续。\n\n" else ""
+                val action = when {
+                    tool.name == "app.open_page" -> "此操作将切换到原生校园页面，请核对目标。\n\n"
+                    tool.name == "reminder.set" -> "此操作将设置一次性待办提醒。系统省电可能延迟，迟到超过 1 小时失效。请核对时间和时区。\n\n"
+                    tool.policy.operation == "command" -> "此操作将修改数据或执行代码，请核对完整参数。\n\n"
+                    else -> "此操作将读取数据。\n\n"
+                }
+                val refresh = if (arguments["refresh"]?.toString() == "true") "将联网刷新校园数据。\n\n" else ""
+                val content = TextView(activity).apply {
+                    text = privacy + action + refresh + targetSummary + "参数：\n" + JSONObject(arguments.toString()).toString(2)
+                    setPadding(32, 24, 32, 24)
+                    setTextIsSelectable(true)
+                }
+                val dialog = AlertDialog.Builder(activity)
+                    .setTitle("Agent：${confirmationTitle(tool.name)}")
+                    .setView(ScrollView(activity).apply { addView(content) })
+                    .setPositiveButton("允许本次") { _, _ -> if (continuation.isActive) continuation.resume(true) }
+                    .setNegativeButton("取消") { _, _ -> if (continuation.isActive) continuation.resume(false) }
+                    .create()
+                dialog.setOnDismissListener {
+                    if (confirmationDialog === dialog) confirmationDialog = null
+                    if (continuation.isActive) continuation.resume(false)
+                }
+                confirmationDialog = dialog
+                continuation.invokeOnCancellation { activity?.runOnUiThread { dialog.dismiss() } }
+                dialog.show()
+            }
+        }
+    }
+
+    private fun confirmationTitle(name: String): String = when (name) {
+        "academic.timetable" -> "读取课表"
+        "academic.exams" -> "读取考试安排"
+        "academic.homework" -> "读取作业列表"
+        "academic.agenda" -> "读取校园日程与待办"
+        "todo.list" -> "读取原生待办"
+        "todo.create" -> "创建原生待办"
+        "todo.update" -> "修改原生待办并撤销旧提醒"
+        "todo.delete" -> "删除原生待办"
+        "reminder.set" -> "设置待办提醒"
+        "reminder.cancel" -> "取消待办提醒"
+        "app.open_page" -> "打开校园页面"
+        "mail.list_folders", "mail.list_recent", "mail.read", "mail.digest_context" -> "读取校园邮件"
+        "mail.search_contacts" -> "查询校园邮箱联系人"
+        "mail.mark_read" -> "将邮件标为已读"
+        "mail.save_draft" -> "保存邮件草稿"
+        "mail.send" -> "发送校园邮件"
+        "file.write" -> "写入工作区文件"
+        "file.delete" -> "删除工作区文件"
+        "archive.extract" -> "解压到工作区"
+        "archive.create_zip" -> "创建压缩包"
+        "document.extract_pdf", "document.extract_docx" -> "提取文档并写入工作区"
+        "document.generate_pdf", "document.generate_docx" -> "生成文档"
+        "code.run_js" -> "执行 JavaScript 代码"
+        "package.results" -> "打包工作区结果"
+        else -> name
+    }
+
+    override fun handleOnPause() {
+        confirmationDialog?.dismiss()
+        super.handleOnPause()
+    }
+
     override fun handleOnDestroy() {
+        confirmationDialog?.dismiss()
         scope.cancel()
         super.handleOnDestroy()
     }
@@ -560,6 +680,18 @@ class NativeAgentToolsPlugin : Plugin() {
         const val HOMEWORK_HANDOFF_MAX_AUTO_IMPORT_BYTES = 20L * 1024L * 1024L
 
         val exposedToNativeToolName = linkedMapOf(
+            "agent_system_status" to "system.status",
+            "agent_academic_timetable" to "academic.timetable",
+            "agent_academic_exams" to "academic.exams",
+            "agent_academic_homework" to "academic.homework",
+            "agent_academic_agenda" to "academic.agenda",
+            "agent_todo_list" to "todo.list",
+            "agent_todo_create" to "todo.create",
+            "agent_todo_update" to "todo.update",
+            "agent_todo_delete" to "todo.delete",
+            "agent_reminder_set" to "reminder.set",
+            "agent_reminder_cancel" to "reminder.cancel",
+            "agent_app_open_page" to "app.open_page",
             "agent_file_list" to "file.list",
             "agent_file_read" to "file.read",
             "agent_file_write" to "file.write",

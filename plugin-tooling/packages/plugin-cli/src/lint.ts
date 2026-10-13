@@ -200,6 +200,11 @@ function validateManifest(
     errors.push(issue('capabilities_field', `capabilities contains unknown field: ${key}`, MANIFEST_FILE));
   }
   const required = validateCapabilities(capabilities.required, 'capabilities.required', errors, true);
+  for (const id of required) {
+    if (CAPABILITY_REGISTRY.capabilities.some((item) => item.id === id && 'optionalOnly' in item && item.optionalOnly === true)) {
+      errors.push(issue('capability_optional_only', `${id} may only appear in capabilities.optional.`, MANIFEST_FILE));
+    }
+  }
   const optional = capabilities.optional === undefined
     ? []
     : validateCapabilities(capabilities.optional, 'capabilities.optional', errors, false);

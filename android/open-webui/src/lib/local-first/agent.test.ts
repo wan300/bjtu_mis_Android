@@ -237,6 +237,28 @@ beforeEach(() => {
 });
 
 describe('requestLocalAgentChatCompletion', () => {
+	it('executes campus queries in an ordinary Android chat without a workspace', async () => {
+		vi.mocked(supportsNativeAgentTools).mockReturnValue(true);
+		vi.mocked(listNativeAgentTools).mockResolvedValue([{
+			type: 'function', requiresWorkspace: false,
+			function: { name: 'agent_academic_homework', description: 'Campus homework', parameters: { type: 'object', properties: {} } }
+		}]);
+		vi.mocked(executeNativeAgentTool).mockResolvedValue({ output: { ok: true, data: { homework: { items: [] } } } });
+		expect(shouldUseLocalAgentLoop({})).toBe(true);
+		const requests: Record<string, any>[] = [];
+		const requestProvider = vi.fn(async (body: Record<string, any>) => {
+			requests.push(body);
+			return [providerJsonResponse(requests.length === 1 ? {
+				role: 'assistant', content: null,
+				tool_calls: [{ id: 'campus-1', type: 'function', function: { name: 'agent_academic_homework', arguments: '{}' } }]
+			} : { role: 'assistant', content: 'No cached homework in the requested window.' }), new AbortController()] as [Response, AbortController];
+		});
+		await requestLocalAgentChatCompletion({ body: reviewDisabledBody(), providerBody: baseProviderBody(), requestProvider });
+		expect(requests[0].tools.map((tool: any) => tool.function.name)).toContain('agent_academic_homework');
+		expect(executeNativeAgentTool).toHaveBeenCalledWith({ workspaceId: '', toolName: 'agent_academic_homework', arguments: {} });
+		expect(JSON.parse(requests[1].messages.at(-1).content).output.ok).toBe(true);
+	});
+
 	it.each(['agent_dynamic_lookup', 'agent_file_read'])(
 		'uses the advertised required fields for %s',
 		async (toolName) => {
@@ -1647,6 +1669,11 @@ describe('requestLocalAgentChatCompletion', () => {
 	});
 
 	it('does not execute agent_mail_send when the user denies confirmation', async () => {
+		vi.mocked(supportsNativeAgentTools).mockReturnValue(true);
+		vi.mocked(listNativeAgentTools).mockResolvedValue([{
+			type: 'function', requiresWorkspace: false,
+			function: { name: 'agent_mail_send', description: 'Send mail', parameters: { type: 'object' } }
+		}]);
 		vi.mocked(confirmNativeMailSend).mockRejectedValue(new Error('user_denied'));
 		const args = {
 			to: ['student@example.edu'],
@@ -1673,6 +1700,11 @@ describe('requestLocalAgentChatCompletion', () => {
 	});
 
 	it('executes agent_mail_send only after confirmation', async () => {
+		vi.mocked(supportsNativeAgentTools).mockReturnValue(true);
+		vi.mocked(listNativeAgentTools).mockResolvedValue([{
+			type: 'function', requiresWorkspace: false,
+			function: { name: 'agent_mail_send', description: 'Send mail', parameters: { type: 'object' } }
+		}]);
 		vi.mocked(executeNativeAgentTool).mockResolvedValue({
 			output: { ok: true, sent: { sent_message_id: 'sent-1', compose_id: 'compose-1' } }
 		});

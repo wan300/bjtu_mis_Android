@@ -18,6 +18,8 @@ interface AgentTool {
     val parameters: JsonObject
     val requiresWorkspace: Boolean
         get() = true
+    val policy: AgentToolPolicy
+        get() = AgentToolPolicy.forTool(name)
 
     suspend fun execute(taskId: String, arguments: JsonObject): ToolResult
 }
@@ -39,6 +41,9 @@ data class ToolArtifact(
 class ToolRegistry(
     tools: List<AgentTool>,
 ) {
+    init {
+        require(tools.map { it.name }.distinct().size == tools.size) { "Duplicate Agent tool name" }
+    }
     private val byName = tools.associateBy { it.name }
 
     val allTools: List<AgentTool> = tools

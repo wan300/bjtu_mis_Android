@@ -154,6 +154,7 @@
               "academic.userCourses.command@1",
               "academic.homework.submit@1",
               "mail.send@1",
+              "android.app.autoStart@1",
               "android.session.keepAlive@1"
             ]
           }

@@ -13,7 +13,8 @@ class CodeTool(
         override val description = "Run a small ECMAScript snippet in AndroidX JavaScriptSandbox. No Node.js, npm, file system, network, or shell."
         override val parameters = objectSchema(
             "code" to stringSchema("JavaScript body. Use return to return a JSON-serializable result."),
-            "input" to objectSchema(),
+            "input" to kotlinx.serialization.json.JsonObject(objectSchema() +
+                ("additionalProperties" to kotlinx.serialization.json.JsonPrimitive(true))),
             "timeoutSeconds" to integerSchema(minimum = 1, maximum = 30),
             required = listOf("code"),
         )

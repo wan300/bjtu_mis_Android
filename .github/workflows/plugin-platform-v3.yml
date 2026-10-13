@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - master
+      - dev
 
 permissions:
   contents: read
@@ -82,6 +83,12 @@ jobs:
       - name: Unit tests
         working-directory: web/platform
         run: npm test
+      - name: Check production image contract inputs
+        run: |
+          test -f docs/third-party-service-manifest.schema.json
+          test -f docs/bjtu-marketplace.schema.json
+          test -f plugin-tooling/contracts/capability-contracts.json
+          test -f tools/third-party-service-lint.cjs
       - name: Verify production image contract inputs
         run: |
           docker build -f web/platform/Dockerfile -t bjtu-plugin-platform-ci .
@@ -155,3 +162,12 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: cd android && ./gradlew :app:connectedDebugAndroidTest -PtargetAbis=x86_64
+      - name: Upload Android instrumentation diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-instrumentation-api-${{ matrix.api-level }}-diagnostics
+          path: |
+            android/app/build/outputs/androidTest-results
+            android/app/build/reports/androidTests
+          if-no-files-found: ignore

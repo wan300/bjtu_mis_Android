@@ -37,6 +37,7 @@ import {
 	listNativeAgentTools,
 	supportsNativeAgentTools
 } from '../native-agent-tools';
+import type { NativeAgentToolPolicy } from '../native-agent-tools';
 
 type JsonRecord = Record<string, any>;
 
@@ -62,6 +63,7 @@ export type LocalToolDefinition = {
 		| 'android';
 	requiresAndroid?: boolean;
 	requiresWorkspace?: boolean;
+	policy?: NativeAgentToolPolicy;
 };
 
 export type LocalToolContext = {
@@ -73,6 +75,7 @@ export type LocalToolContext = {
 
 export type LocalToolExecutionContext = {
 	agentWorkspaceId?: string | null;
+	requestId?: string;
 };
 
 const jsonString = (value: unknown) => JSON.stringify(value);
@@ -639,7 +642,7 @@ export const LOCAL_CORE_TOOL_SPECS: LocalToolDefinition[] = [
 		category: 'tasks',
 		function: {
 			name: 'create_local_task',
-			description: 'Create an on-device local task.',
+			description: 'Create a task in the WebUI local database. For native App calendar todos and linked reminders, use agent_todo_create when available.',
 			parameters: objectSchema(
 				{
 					title: stringProp('Task title.'),
@@ -656,7 +659,7 @@ export const LOCAL_CORE_TOOL_SPECS: LocalToolDefinition[] = [
 		category: 'tasks',
 		function: {
 			name: 'update_local_task',
-			description: 'Update an on-device local task.',
+			description: 'Update a task in the WebUI local database. Native App calendar todos use agent_todo_update; their IDs are separate.',
 			parameters: objectSchema(
 				{
 					id: stringProp('Task id.'),
@@ -674,7 +677,7 @@ export const LOCAL_CORE_TOOL_SPECS: LocalToolDefinition[] = [
 		category: 'tasks',
 		function: {
 			name: 'list_local_tasks',
-			description: 'List on-device local tasks.',
+			description: 'List tasks in the WebUI local database. To query native App calendar todos and reminders, use agent_todo_list when available.',
 			parameters: objectSchema({
 				status: { type: 'string', enum: ['todo', 'in_progress', 'done', 'cancelled'] },
 				limit: intProp('Maximum tasks to return. Defaults to 50.')
@@ -991,14 +994,17 @@ export const executeRegisteredLocalTool = async (
 ) => {
 	try {
 		if (name.startsWith('agent_')) {
-			const canRunWithoutWorkspace = name.startsWith('agent_mail_');
-			if (!context.agentWorkspaceId && !canRunWithoutWorkspace) {
+			if (!supportsNativeAgentTools()) throw new Error('Native Agent tools are unavailable.');
+			const tool = (await listNativeAgentTools()).find((item) => item.function.name === name);
+			if (!tool) throw new Error(`Native Agent tool "${name}" is not registered.`);
+			if (!context.agentWorkspaceId && tool.requiresWorkspace !== false) {
 				throw new Error('Native Agent workspace is not available for this chat.');
 			}
 			await confirmMailSendIfNeeded(name, args);
 
 			return jsonString(
 				await executeNativeAgentTool({
+					...(context.requestId ? { requestId: context.requestId } : {}),
 					workspaceId: context.agentWorkspaceId ?? '',
 					toolName: name,
 					arguments: args

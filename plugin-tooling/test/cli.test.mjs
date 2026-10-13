@@ -111,6 +111,30 @@ test('CLI rejects old bridge and permission fields', async (context) => {
   assert.ok(result.errors.filter((item) => item.code === 'legacy_field').length >= 2);
 });
 
+test('CLI accepts optional autostart and rejects required autostart', async (context) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'bjtu-autostart-lint-'));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const manifest = {
+    schema_version: 3,
+    id: 'io.example.autostart',
+    name: 'Autostart',
+    version: '1.0.0',
+    entrypoint: 'index.html',
+    icon: 'icon.svg',
+    capabilities: { required: ['runtime.lifecycle@1'], optional: ['android.app.autoStart@1'] }
+  };
+  const file = path.join(root, 'bjtu-plugin.json');
+  await writeFile(file, JSON.stringify(manifest));
+  assert.equal((await lintPlugin(root, { requireDist: false })).ok, true);
+  manifest.capabilities.required.push('android.app.autoStart@1');
+  manifest.capabilities.optional = [];
+  delete manifest.capabilities.optional;
+  await writeFile(file, JSON.stringify(manifest));
+  const result = await lintPlugin(root, { requireDist: false });
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((item) => item.code === 'capability_optional_only'));
+});
+
 test('CLI requires the navigation capability for declared navigation origins', async (context) => {
   const temporary = await mkdtemp(path.join(os.tmpdir(), 'bjtu-navigation-lint-'));
   context.after(() => rm(temporary, { recursive: true, force: true }));

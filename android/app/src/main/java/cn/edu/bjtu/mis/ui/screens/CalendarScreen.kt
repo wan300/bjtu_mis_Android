@@ -96,6 +96,11 @@ import cn.edu.bjtu.mis.model.HomeworkItem
 import cn.edu.bjtu.mis.model.TermOption
 import cn.edu.bjtu.mis.model.UserTodoDraft
 import cn.edu.bjtu.mis.model.UserTodoItem
+import cn.edu.bjtu.mis.data.todo.TodoReminder
+import cn.edu.bjtu.mis.data.todo.TodoReminders
+import kotlinx.coroutines.flow.flowOf
+import java.time.Instant
+import java.time.ZoneId
 import cn.edu.bjtu.mis.model.buildAcademicCalendar
 import cn.edu.bjtu.mis.model.buildAcademicMonthCalendar
 import cn.edu.bjtu.mis.model.defaultAcademicMonth
@@ -132,6 +137,7 @@ fun CalendarScreen(
     repository: ModuleRepository,
     employmentRepository: EmploymentConsultationRepository,
     employmentCalendarSyncStore: EmploymentCalendarSyncStore,
+    todoReminders: TodoReminders? = null,
     initialLoadStrategy: ModuleLoadStrategy = ModuleLoadStrategy.NetworkFirst,
     onOpenHomework: (HomeworkItem) -> Unit,
 ) {
@@ -140,6 +146,7 @@ fun CalendarScreen(
     val uriHandler = LocalUriHandler.current
     val exportSchedule = rememberScheduleExportLauncher()
     val employmentSyncEnabled by employmentCalendarSyncStore.enabled.collectAsState(initial = false)
+    val reminders by (todoReminders?.store?.records ?: flowOf(emptyMap<Long, TodoReminder>())).collectAsState(initial = emptyMap())
     val today = remember { LocalDate.now() }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedCalendarTerm by remember { mutableStateOf<String?>(null) }
@@ -336,6 +343,12 @@ fun CalendarScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                     contentPadding = PaddingValues(bottom = 88.dp),
                 ) {
+                    if (dashboard.campusErrors.isNotEmpty()) item {
+                        Text(dashboard.campusErrors.joinToString("\n"), color = MaterialTheme.colorScheme.error)
+                    }
+                    todoSaveError?.let { message -> item {
+                        Text(message, color = MaterialTheme.colorScheme.error)
+                    } }
                     item {
                         EmploymentCalendarSyncCard(
                             enabled = employmentSyncEnabled,
@@ -471,6 +484,13 @@ fun CalendarScreen(
                             },
                             onToggleTodo = ::setTodoDone,
                             onDeleteTodo = ::deleteTodo,
+                            reminders = reminders,
+                            onCancelReminder = { todo ->
+                                scope.launch {
+                                    runCatching { todoReminders?.cancel(todo.id) }
+                                        .onFailure { todoSaveError = "提醒取消失败，请重试" }
+                                }
+                            },
                             onOpenEmploymentUrl = ::openUri,
                             onOpenHomework = { item ->
                                 selectedDate = null
@@ -1054,6 +1074,8 @@ private fun CalendarDayDetail(
     onAddTodo: () -> Unit,
     onToggleTodo: (UserTodoItem, Boolean) -> Unit,
     onDeleteTodo: (UserTodoItem) -> Unit,
+    reminders: Map<Long, TodoReminder>,
+    onCancelReminder: (UserTodoItem) -> Unit,
     onOpenEmploymentUrl: (String) -> Unit,
     onOpenHomework: (HomeworkItem) -> Unit,
 ) {
@@ -1181,6 +1203,8 @@ private fun CalendarDayDetail(
             todos.forEach { todo ->
                 UserTodoRow(
                     todo = todo,
+                    reminder = reminders[todo.id]?.takeIf { !todo.done && it.todoUpdatedAt == todo.updatedAt },
+                    onCancelReminder = { onCancelReminder(todo) },
                     onToggle = { onToggleTodo(todo, it) },
                     onDelete = { onDeleteTodo(todo) },
                 )
@@ -1228,6 +1252,8 @@ private fun CalendarDayDetail(
 @Composable
 private fun UserTodoRow(
     todo: UserTodoItem,
+    reminder: TodoReminder?,
+    onCancelReminder: () -> Unit,
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -1259,6 +1285,20 @@ private fun UserTodoRow(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
+                }
+                reminder?.let {
+                    val time = Instant.ofEpochMilli(it.triggerAtMs).atZone(ZoneId.of("Asia/Shanghai"))
+                        .format(java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm"))
+                    val status = when (it.state) {
+                        "scheduled" -> "已安排（系统可能延迟）"
+                        "delivered" -> "已发送"
+                        "blocked" -> "通知未获许可，请重新设置"
+                        "expired" -> "已过期"
+                        "pending", "delivering" -> "状态待核实，请重新设置"
+                        else -> "安排失败，请重新设置"
+                    }
+                    Text("提醒 $time · $status", style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = onCancelReminder) { Text("取消提醒") }
                 }
             }
             IconButton(onClick = onDelete) {
