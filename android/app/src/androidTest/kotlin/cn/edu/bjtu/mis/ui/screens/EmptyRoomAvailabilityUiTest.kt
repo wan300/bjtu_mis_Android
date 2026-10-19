@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -105,6 +106,11 @@ class EmptyRoomAvailabilityUiTest {
 
     private fun select(label: String, option: String) {
         compose.onNodeWithText(label).performClick()
+        // DropdownMenu owns a separate Android popup window; wait for its semantics
+        // after the click before injecting the next touch on slower emulators.
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText(option).fetchSemanticsNodes().size == 1
+        }
         compose.onNodeWithText(option).performClick()
     }
 
