@@ -3,6 +3,21 @@
   const releaseListingUrl = "https://github.com/wan300/bjtu_mis_Android/releases";
   const fallbackReleases = [
     {
+      tag_name: "v1.4.3",
+      html_url: "https://github.com/wan300/bjtu_mis_Android/releases/tag/v1.4.3",
+      prerelease: false,
+      published_at: "2026-10-19T18:28:48Z",
+      assets: [
+        {
+          name: "BJTU-MIS-v1.4.3.apk",
+          size: 213933263,
+          browser_download_url:
+            "https://github.com/wan300/bjtu_mis_Android/releases/download/v1.4.3/BJTU-MIS-v1.4.3.apk"
+        }
+      ]
+    },
+
+    {
       tag_name: "v1.4.2",
       html_url: "https://github.com/wan300/bjtu_mis_Android/releases/tag/v1.4.2",
       prerelease: false,
@@ -115,10 +130,10 @@
       ]
     }
   ];
-  const fallbackApk = "https://github.com/wan300/bjtu_mis_Android/releases/download/v1.4.2/BJTU-MIS-v1.4.2.apk";
-  const fallbackRelease = "https://github.com/wan300/bjtu_mis_Android/releases/tag/v1.4.2";
-  const fallbackTag = "v1.4.2";
-  const fallbackSizeText = "144.64 MB";
+  const fallbackApk = "https://github.com/wan300/bjtu_mis_Android/releases/download/v1.4.3/BJTU-MIS-v1.4.3.apk";
+  const fallbackRelease = "https://github.com/wan300/bjtu_mis_Android/releases/tag/v1.4.3";
+  const fallbackTag = "v1.4.3";
+  const fallbackSizeText = "204.02 MB";
   const releaseRefreshInterval = 5 * 60 * 1000;
   const imageAssetQuery = "?v=2026062602";
 
@@ -160,7 +175,12 @@
     if (!value) return "--";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "--";
-    return date.toISOString().slice(0, 10);
+    return new Intl.DateTimeFormat("zh-CN", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(date).replace(/\//g, "-");
   }
 
   function categoryGroups() {
