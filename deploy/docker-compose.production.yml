@@ -1,0 +1,14 @@
+# Docker Compose >= 2.24.4. This override removes ALL source-build definitions.
+services:
+  migrate:
+    build: !reset null
+    image: ${BJTU_PLATFORM_IMAGE:?Set an immutable prebuilt platform image}
+    pull_policy: never
+  api:
+    build: !reset null
+    image: ${BJTU_PLATFORM_IMAGE:?Set an immutable prebuilt platform image}
+    pull_policy: never
+  worker:
+    build: !reset null
+    image: ${BJTU_PLATFORM_IMAGE:?Set an immutable prebuilt platform image}
+    pull_policy: never

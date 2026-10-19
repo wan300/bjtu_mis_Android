@@ -1,0 +1,11 @@
+[Unit]
+Description=Collect BJTU history every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:20
+AccuracySec=2s
+RandomizedDelaySec=3s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

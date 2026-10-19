@@ -1,0 +1,32 @@
+[Unit]
+Description=BJTU private host, container, and endpoint history
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/bjtu-monitor/current/collect.py
+StateDirectory=bjtu-monitor
+StateDirectoryMode=0700
+LogsDirectory=bjtu-monitor
+LogsDirectoryMode=0700
+UMask=0077
+TimeoutStartSec=50s
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=10%
+MemoryHigh=64M
+MemoryMax=96M
+TasksMax=32
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/bjtu-monitor /var/log/bjtu-monitor
+
+[Install]
+WantedBy=multi-user.target

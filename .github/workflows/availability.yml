@@ -1,0 +1,46 @@
+name: bjtu.cc availability
+
+on:
+  schedule:
+    - cron: '2-57/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      drill:
+        description: 'Verify one test issue, duplicate suppression, and recovery (production stays up)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: bjtu-public-availability
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Run monitor logic tests
+        run: python3 -m unittest discover -s deploy/monitoring/tests -v
+      - name: Probe public website and database-backed catalog
+        id: probe
+        continue-on-error: true
+        run: python3 deploy/monitoring/probe.py --output availability.json
+      - name: Reconcile deduplicated incident and recovery notifications
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          BJTU_ALERT_ASSIGNEE: wan300
+          DRILL: ${{ inputs.drill || 'false' }}
+        run: |
+          if [ "$DRILL" = true ]; then
+            python3 tools/availability-alert.py --report availability.json --drill
+          else
+            python3 tools/availability-alert.py --report availability.json
+          fi

@@ -1,0 +1,20 @@
+# Budget for this 2-vCPU / 1608-MiB shared host; memory-swap includes RAM.
+services:
+  api:
+    mem_limit: 192m
+    memswap_limit: 320m
+    cpu_period: 100000
+    cpu_quota: 50000
+    pids_limit: 128
+  worker:
+    mem_limit: 256m
+    memswap_limit: 384m
+    cpu_period: 100000
+    cpu_quota: 35000
+    pids_limit: 128
+  postgres:
+    mem_limit: 256m
+    memswap_limit: 384m
+    cpu_period: 100000
+    cpu_quota: 40000
+    pids_limit: 128
