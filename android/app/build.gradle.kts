@@ -162,8 +162,8 @@ android {
         applicationId = "cn.edu.bjtu.mis"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "v1.4.2"
+        versionCode = 10
+        versionName = "v1.4.3"
 
         buildConfigField("String", "PLUGIN_CATALOG_BASE_URL", "\"https://bjtu.cc\"")
 

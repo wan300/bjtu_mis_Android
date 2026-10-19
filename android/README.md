@@ -27,8 +27,8 @@
 .\gradlew.bat assembleDebug
 ```
 
-正式版本当前为 `v1.4.2`（`versionCode = 9`），更新内容见
-[v1.4.2 更新说明](../docs/release-notes-v1.4.2.md)。构建 Release 前，将
+正式版本当前为 `v1.4.3`（`versionCode = 10`），更新内容见
+[v1.4.3 更新说明](../docs/release-notes-v1.4.3.md)。构建 Release 前，将
 `release-signing.properties.example` 复制为本机的 `release-signing.properties`，
 并填写 `v1.3.1` 使用的原 keystore、alias 和口令：
 

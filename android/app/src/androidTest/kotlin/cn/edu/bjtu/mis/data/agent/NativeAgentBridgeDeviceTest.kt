@@ -4,6 +4,13 @@ import android.content.Intent
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.webkit.WebView
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasScrollToNodeAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -18,6 +25,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.time.LocalDate
@@ -29,6 +37,9 @@ import java.util.concurrent.atomic.AtomicReference
 /** Exercises the production Capacitor bridge and its real visible Android confirmation dialogs. */
 @RunWith(AndroidJUnit4::class)
 class NativeAgentBridgeDeviceTest {
+    @get:Rule
+    val compose = createEmptyComposeRule()
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private val container get() = (context.applicationContext as BjtuMisApplication).container
@@ -72,10 +83,15 @@ class NativeAgentBridgeDeviceTest {
             val result = awaitResult(webView)
             assertEquals("queued", result["output"]!!.jsonObject["status"]!!.jsonPrimitive.content)
             awaitCondition("WebView must hide after confirmed navigation") { !onMain { webView.isShown } }
-            awaitCondition("Native calendar must be visible") {
-                val visible = windowTexts(instrumentation.uiAutomation.rootInActiveWindow)
-                "学年日历" in visible && "月视图" in visible
+            compose.waitUntil(timeoutMillis = 15_000) {
+                runCatching {
+                    compose.onNodeWithText("学年日历").assertIsDisplayed()
+                    compose.onNodeWithContentDescription("新增待办").assertIsDisplayed()
+                }.isSuccess
             }
+            // The month/week selector can be below the fold on smaller emulator screens.
+            compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("月视图"))
+            compose.onNodeWithText("月视图").assertIsDisplayed()
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
             awaitCondition("Back must restore the Agent WebView") { onMain { webView.isShown } }
             assertTrue(evaluate(webView, "location.origin").contains("localhost"))

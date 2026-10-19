@@ -12,6 +12,7 @@ import cn.edu.bjtu.mis.MainActivity
 import cn.edu.bjtu.mis.data.AppJson
 import cn.edu.bjtu.mis.data.thirdparty.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.encodeToString
@@ -25,7 +26,7 @@ import java.util.UUID
 @RunWith(AndroidJUnit4::class)
 class PluginAutoStartDeviceTest {
     @Test
-    fun optionalGrantStartsVisibleServiceAndRevocationStopsTheRuntime() = runBlocking {
+    fun optionalGrantRespectsSecureTransportAndRevocationStopsTheRuntime() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         assertTrue(context.packageName.endsWith(".debug"))
@@ -37,7 +38,7 @@ class PluginAutoStartDeviceTest {
         val supervisor = container.pluginAutomationSupervisor
         val manager = context.getSystemService(NotificationManager::class.java)
         assertTrue("Enable debug notifications before physical-device acceptance", manager.areNotificationsEnabled())
-        assertTrue("Secure WebView transport is required", PluginWebViewPolicy.supportsSecureTransport())
+        val secureTransportAvailable = PluginWebViewPolicy.supportsSecureTransport()
         val id = "qa.autostart.${UUID.randomUUID().toString().replace("-", "")}"
         val root = File(context.filesDir, "third-party-services/installed/$id").canonicalFile
         check(root.path.startsWith(File(context.filesDir, "third-party-services/installed").canonicalPath + File.separator))
@@ -62,9 +63,21 @@ class PluginAutoStartDeviceTest {
                 assertFalse(repository.getService(id)!!.grantedCapabilities.contains("android.app.autoStart@1"))
                 assertEquals(0, supervisor.activeRuntimeCount())
                 repository.setAppAutoStartEnabled(id, true)
-                withTimeout(20_000) {
-                    while (supervisor.activeRuntimeCount() != 1 ||
-                        manager.activeNotifications.none { it.id == 24019 }) delay(100)
+                if (secureTransportAvailable) {
+                    withTimeout(20_000) {
+                        while (supervisor.activeRuntimeCount() != 1 ||
+                            manager.activeNotifications.none { it.id == 24019 }) delay(100)
+                    }
+                } else {
+                    // Old providers must fail closed, even after an explicit optional grant.
+                    withTimeout(20_000) {
+                        supervisor.autoStartStatus.first { it == "后台服务已停止，下次打开主应用时重试" }
+                    }
+                    assertEquals(0, supervisor.activeRuntimeCount())
+                    assertTrue(repository.getService(id)!!.grantedCapabilities.contains("android.app.autoStart@1"))
+                    withTimeout(15_000) {
+                        while (manager.activeNotifications.any { it.id == 24019 }) delay(100)
+                    }
                 }
                 repository.setAppAutoStartEnabled(id, false)
                 withTimeout(15_000) {
