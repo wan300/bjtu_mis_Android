@@ -1,6 +1,8 @@
 import copy
+import contextlib
 import datetime as dt
 import importlib.util
+import io
 import json
 from pathlib import Path
 import sys
@@ -127,6 +129,35 @@ class FakeGitHub:
 
 
 class AlertTests(unittest.TestCase):
+    def test_issue_list_lag_cannot_duplicate_or_resurrect_own_write(self):
+        api = alert.GitHub('owner/repo', 'unused')
+        issue = {'number': 41, 'state': 'open', 'html_url': 'https://github.com/owner/repo/issues/41', 'body': alert.marker_for('production'), 'user': {'login': 'github-actions[bot]'}, 'assignees': [{'login': 'owner'}]}
+        creations = []
+
+        def response(request, **kwargs):
+            if request.method == 'POST' and request.full_url.endswith('/issues'):
+                creations.append(request)
+                value = issue
+            elif request.method == 'PATCH':
+                issue.update(json.loads(request.data))
+                value = issue
+            elif request.method == 'GET':
+                # Always return stale listing: empty before creation, then an
+                # open version even after the authoritative PATCH closes it.
+                value = [] if issue['state'] == 'open' else [dict(issue, state='open')]
+            else:
+                value = {}
+            return contextlib.closing(io.BytesIO(json.dumps(value).encode()))
+
+        with patch.object(alert.urllib.request, 'urlopen', side_effect=response):
+            fail = {'ok': False, 'checks': []}
+            healthy = {'ok': True, 'checks': []}
+            self.assertEqual(alert.reconcile(api, fail, 'production', 'https://github.com/owner/repo/actions/runs/1', 'owner')['action'], 'opened')
+            self.assertEqual(alert.reconcile(api, fail, 'production', 'https://github.com/owner/repo/actions/runs/1', 'owner')['action'], 'already_open')
+            self.assertEqual(alert.reconcile(api, healthy, 'production', 'https://github.com/owner/repo/actions/runs/1', 'owner')['action'], 'recovered')
+            self.assertEqual(alert.reconcile(api, healthy, 'production', 'https://github.com/owner/repo/actions/runs/1', 'owner')['action'], 'healthy')
+        self.assertEqual(len(creations), 1)
+
     def test_deduplicated_failure_and_recovery(self):
         api = FakeGitHub()
         failure = {'ok': False, 'checks': [{'name': 'catalog', 'ok': False, 'status': 503, 'reason': 'http_error'}]}

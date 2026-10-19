@@ -18,6 +18,7 @@ class GitHub:
             raise ValueError('Invalid repository')
         self.repository = repository
         self.token = token
+        self.known_issues = {}
 
     def request(self, method, path, body=None):
         data = None if body is None else json.dumps(body).encode('utf-8')
@@ -25,19 +26,30 @@ class GitHub:
             'Authorization': 'Bearer ' + self.token,
             'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json',
             'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'BJTU-Availability-Monitor/1',
+            'Cache-Control': 'no-cache',
         })
         try:
             with urllib.request.urlopen(request, timeout=20) as response:
-                return json.load(response)
+                result = json.load(response)
+                if isinstance(result, dict) and 'number' in result and 'state' in result and method in ('POST', 'PATCH'):
+                    # List endpoints can lag successful writes. Keep authoritative
+                    # write responses for this run, including closures.
+                    self.known_issues[result['number']] = result
+                return result
         except urllib.error.HTTPError as exc:
             # The response/request must not be printed, as it can include credentials.
             raise RuntimeError('GitHub API HTTP {}'.format(exc.code)) from None
 
     def open_incidents(self, marker):
+        seen = set(self.known_issues)
+        for issue in self.known_issues.values():
+            if issue['state'] == 'open' and marker in (issue.get('body') or '') and issue.get('user', {}).get('login') == 'github-actions[bot]':
+                yield issue
         for page in range(1, 11):
             issues = self.request('GET', '/issues?state=open&per_page=100&page=' + str(page))
             for issue in issues:
-                if 'pull_request' not in issue and marker in (issue.get('body') or '') and issue.get('user', {}).get('login') == 'github-actions[bot]':
+                if issue['number'] not in seen and 'pull_request' not in issue and marker in (issue.get('body') or '') and issue.get('user', {}).get('login') == 'github-actions[bot]':
+                    seen.add(issue['number'])
                     yield issue
             if len(issues) < 100:
                 return
@@ -117,13 +129,27 @@ def main():
     if args.drill and report['ok']:
         scope = 'drill-' + run_id
         failed = {'ok': False, 'checks': [{'name': 'notification_drill', 'ok': False, 'reason': 'controlled_simulation', 'status': 503, 'elapsedMs': 0}]}
-        opened = reconcile(api, failed, scope, run_url, assignee)
-        repeated = reconcile(api, failed, scope, run_url, assignee)
-        if repeated['action'] != 'already_open' or repeated['number'] != opened['number']:
-            raise RuntimeError('Deduplication drill failed')
-        print(json.dumps(opened))
-        print(json.dumps(repeated))
-        print(json.dumps(reconcile(api, report, scope, run_url, assignee)))
+        drill_issues = set()
+        completed = False
+        try:
+            opened = reconcile(api, failed, scope, run_url, assignee)
+            drill_issues.add(opened['number'])
+            repeated = reconcile(api, failed, scope, run_url, assignee)
+            drill_issues.add(repeated['number'])
+            if repeated['action'] != 'already_open' or repeated['number'] != opened['number']:
+                raise RuntimeError('Deduplication drill failed')
+            print(json.dumps(opened))
+            print(json.dumps(repeated))
+            recovered = reconcile(api, report, scope, run_url, assignee)
+            if recovered['action'] != 'recovered':
+                raise RuntimeError('Recovery drill failed')
+            print(json.dumps(recovered))
+            completed = True
+        finally:
+            if not completed:
+                # Never leave a known TEST incident open after a failed drill.
+                for number in drill_issues:
+                    api.request('PATCH', '/issues/' + str(number), {'state': 'closed', 'state_reason': 'completed'})
     return 0 if report['ok'] else 1
 
 
