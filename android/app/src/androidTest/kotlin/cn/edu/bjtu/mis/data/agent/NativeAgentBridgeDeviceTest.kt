@@ -4,6 +4,10 @@ import android.content.Intent
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.webkit.WebView
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -18,6 +22,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.time.LocalDate
@@ -29,6 +34,9 @@ import java.util.concurrent.atomic.AtomicReference
 /** Exercises the production Capacitor bridge and its real visible Android confirmation dialogs. */
 @RunWith(AndroidJUnit4::class)
 class NativeAgentBridgeDeviceTest {
+    @get:Rule
+    val compose = createEmptyComposeRule()
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private val container get() = (context.applicationContext as BjtuMisApplication).container
@@ -72,12 +80,10 @@ class NativeAgentBridgeDeviceTest {
             val result = awaitResult(webView)
             assertEquals("queued", result["output"]!!.jsonObject["status"]!!.jsonPrimitive.content)
             awaitCondition("WebView must hide after confirmed navigation") { !onMain { webView.isShown } }
-            // Keep the production frame clock: a Compose test rule stalls this bridge's
-            // coroutine-driven Activity setup until a Compose synchronization call occurs.
-            awaitCondition("Native calendar title and add-todo action must be visible") {
-                val visible = windowTexts(instrumentation.uiAutomation.rootInActiveWindow)
-                "学年日历" in visible && "新增待办" in visible
-            }
+            // API 26 can lose UiAutomation's active root after the WebView hides.
+            // Query the actual Compose hierarchy without depending on that Android cache.
+            compose.onNodeWithText("学年日历").assertIsDisplayed()
+            compose.onNodeWithContentDescription("新增待办").assertIsDisplayed()
             instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
             awaitCondition("Back must restore the Agent WebView") { onMain { webView.isShown } }
             assertTrue(evaluate(webView, "location.origin").contains("localhost"))
@@ -102,6 +108,9 @@ class NativeAgentBridgeDeviceTest {
 
     private suspend fun awaitAgent(scenario: ActivityScenario<MainActivity>): WebView = withTimeout(40_000) {
         while (true) {
+            // Activity setup waits for a Compose frame. Bridge polling must also drive
+            // the test clock, rather than waiting only on wall-clock coroutine delays.
+            compose.waitForIdle()
             var view: WebView? = null
             scenario.onActivity { activity ->
                 view = activity.findViewById(com.getcapacitor.android.R.id.webview)
@@ -129,6 +138,7 @@ class NativeAgentBridgeDeviceTest {
 
     private suspend fun awaitResult(webView: WebView): JsonObject = withTimeout(20_000) {
         while (true) {
+            compose.waitForIdle()
             val encoded = AppJson.parseToJsonElement(evaluate(webView, "JSON.stringify(window.__qaResult)"))
             val json = (encoded as? JsonPrimitive)?.contentOrNull
             if (json != null && json != "null") return@withTimeout AppJson.parseToJsonElement(json).jsonObject
@@ -139,6 +149,7 @@ class NativeAgentBridgeDeviceTest {
 
     private suspend fun clickNativeButton(label: String) = withTimeout(15_000) {
         while (true) {
+            compose.waitForIdle()
             val button = instrumentation.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText(label)
                 ?.firstOrNull { it.text?.toString() == label && it.isClickable }
             if (button?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) return@withTimeout
@@ -148,7 +159,11 @@ class NativeAgentBridgeDeviceTest {
 
     private suspend fun awaitCondition(message: String, condition: () -> Boolean) {
         val passed = withTimeoutOrNull(15_000) {
-            while (!condition()) delay(100)
+            while (true) {
+                compose.waitForIdle()
+                if (condition()) break
+                delay(100)
+            }
             true
         } == true
         val root = instrumentation.uiAutomation.rootInActiveWindow
