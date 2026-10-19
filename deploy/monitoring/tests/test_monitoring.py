@@ -15,6 +15,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'deploy' / 'monitoring'))
 import collect
+import install
 import probe
 
 spec = importlib.util.spec_from_file_location('availability_alert', ROOT / 'tools' / 'availability-alert.py')
@@ -104,6 +105,46 @@ class HistoryTests(unittest.TestCase):
     def test_cpu_uses_counter_deltas(self):
         self.assertIsNone(collect.delta_percent([10] * 8, None))
         self.assertEqual(collect.delta_percent([10, 0, 0, 90, 0, 0, 0, 0], [0] * 8), 10)
+
+
+class RollbackTests(unittest.TestCase):
+    @unittest.skipIf(sys.platform == 'win32', 'Linux rollback uses POSIX symlinks')
+    def test_config_enablement_links_and_history_are_restored_separately(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            original = root / 'original.conf'
+            added = root / 'added.conf'
+            original.write_text('original config')
+            old_link = root / 'existing-link'
+            new_link = root / 'new-link'
+            old_link.symlink_to(original)
+            history = root / 'history.jsonl'
+            history.write_text('retained metrics')
+            calls = []
+
+            def systemctl(args, check=True):
+                calls.append(args)
+                if 'show' in args:
+                    return 'ActiveState=active\nUnitFileState=enabled' if args[2] == 'old.timer' else 'ActiveState=inactive\nUnitFileState=disabled'
+                return ''
+
+            with patch.object(install, 'FILES', (str(original), str(added))), patch.object(install, 'LINKS', (str(old_link), str(new_link))), patch.object(install, 'UNITS', ('old.timer', 'new.timer')), patch.object(install, 'run', side_effect=systemctl):
+                backup = root / 'backup'
+                install.snapshot(backup)
+                original.write_text('changed config')
+                added.write_text('new config')
+                old_link.unlink()
+                old_link.symlink_to(added)
+                new_link.symlink_to(added)
+                install.restore(backup)
+            self.assertEqual(original.read_text(), 'original config')
+            self.assertFalse(added.exists())
+            self.assertEqual(old_link.resolve(), original)
+            self.assertFalse(new_link.is_symlink())
+            self.assertEqual(history.read_text(), 'retained metrics')
+            self.assertIn(['systemctl', 'enable', 'old.timer'], calls)
+            self.assertIn(['systemctl', 'start', 'old.timer'], calls)
+            self.assertIn(['systemctl', 'disable', 'new.timer'], calls)
 
 
 class FakeGitHub:
