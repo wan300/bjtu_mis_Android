@@ -20,6 +20,17 @@
 2. 等待 Gradle 同步完成。
 3. 运行 `app` target。
 
+## 统一认证登录
+
+登录支持旧 CAS 表单及新的 SSO `loginForm`。新的 SSO 使用页面提供的 SM2 公钥加密密码，
+无需验证码时直接登录；认证服务要求图片验证码时再显示输入框，刷新失败后旧验证码立即失效。
+MIS 或 AA 返回认证页时会判定会话已过期，不会将认证页 HTTP 200 误判为已登录。
+验证码自动识别模型目前仅服务旧 CAS 的数学验证码，新 SSO 图片验证码由用户输入。
+
+网证、企业微信的原生跳转授权尚未接入。TODO: confirm：校方网证移动端 SDK/回调协议、
+企业微信为本 App 登记的 Android 包名/签名与授权 schema，以及校方会话兑换接口；
+公开网页扫码参数不足以完成这些原生授权回调，客户端不得内嵌服务端 Secret。
+
 ## 命令行
 
 ```powershell
@@ -27,8 +38,8 @@
 .\gradlew.bat assembleDebug
 ```
 
-正式版本当前为 `v1.4.3`（`versionCode = 10`），更新内容见
-[v1.4.3 更新说明](../docs/release-notes-v1.4.3.md)。构建 Release 前，将
+正式版本当前为 `v1.4.4`（`versionCode = 11`），更新内容见
+[v1.4.4 更新说明](../docs/release-notes-v1.4.4.md)。构建 Release 前，将
 `release-signing.properties.example` 复制为本机的 `release-signing.properties`，
 并填写 `v1.3.1` 使用的原 keystore、alias 和口令：
 

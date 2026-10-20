@@ -5,10 +5,15 @@ import cn.edu.bjtu.mis.data.captcha.CaptchaSolveException
 import cn.edu.bjtu.mis.data.network.AppCookieJar
 import cn.edu.bjtu.mis.data.network.BjtuHttpClient
 import cn.edu.bjtu.mis.data.parser.normalizeSpace
+import cn.edu.bjtu.mis.data.parser.CampusLoginPage
+import cn.edu.bjtu.mis.data.parser.hasCampusLoginForm
+import cn.edu.bjtu.mis.data.parser.parseCampusLoginPage
 import cn.edu.bjtu.mis.data.perf.PerfTrace
 import cn.edu.bjtu.mis.data.security.CredentialStore
 import cn.edu.bjtu.mis.data.security.LoginCredentials
 import cn.edu.bjtu.mis.data.security.SessionCookieStore
+import cn.edu.bjtu.mis.data.security.encryptSsoPassword
+import cn.edu.bjtu.mis.data.AppJson
 import cn.edu.bjtu.mis.model.AutoLoginResult
 import cn.edu.bjtu.mis.model.AutoLoginStatus
 import cn.edu.bjtu.mis.model.SessionCaptcha
@@ -18,6 +23,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.jsoup.Jsoup
 import java.io.IOException
 import java.net.URI
@@ -92,30 +102,77 @@ class SessionManager(
     )
     private var inlineLoginState: InlineLoginState? = null
 
-    suspend fun fetchInlineLoginCaptcha(): SessionCaptcha = mutex.withLock {
+    suspend fun fetchInlineLoginCaptcha(): SessionCaptcha = fetchInlineLoginCaptcha(reusePreparedCasPage = false)
+
+    private suspend fun fetchInlineLoginCaptcha(reusePreparedCasPage: Boolean): SessionCaptcha = mutex.withLock {
+        val previous = inlineLoginState
+        inlineLoginState = null
+        val state = previous?.takeIf { it.page.isSso || reusePreparedCasPage } ?: loadInlineLoginPage()
+        cookieJar.restoreFromJson(state.cookiesJson)
+        val dataUrl = if (state.page.isSso) {
+            val endpoint = URI(state.referer).resolve("/api/captcha/getCaptcha").toString()
+            val response = httpClient.postForm(endpoint, emptyMap(), headers = mapOf("Referer" to state.referer))
+            val payload = runCatching { AppJson.parseToJsonElement(response.body) as? JsonObject }.getOrNull()
+            val data = payload?.get("data") as? JsonObject
+            val id = data?.get("captchaId")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                ?: throw IOException("统一认证验证码加载失败，请刷新后重试。")
+            val image = data?.get("captchaImg")?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            val imageDataUrl = if (image.startsWith("data:image/")) image else "data:image/png;base64,$image"
+            validateCaptchaData(imageDataUrl)
+            inlineLoginState = state.copy(captchaId = id, cookiesJson = cookieJar.encodeSnapshot())
+            imageDataUrl
+        } else {
+            val captcha = httpClient.getBytes(
+                requireNotNull(state.page.captchaUrl),
+                headers = mapOf("Referer" to state.referer),
+                maxBytes = 1024 * 1024L,
+            )
+            val mimeType = captcha.headers["Content-Type"]?.substringBefore(";")?.trim().orEmpty()
+                .ifBlank { "image/jpeg" }
+            if (!mimeType.startsWith("image/") || captcha.body.isEmpty()) {
+                throw IOException("验证码接口未返回有效图片，请刷新后重试。")
+            }
+            val encoded = Base64.getEncoder().encodeToString(captcha.body)
+            inlineLoginState = state.copy(cookiesJson = cookieJar.encodeSnapshot(), captchaImageBase64 = encoded)
+            "data:$mimeType;base64,$encoded"
+        }
+        SessionCaptcha(imageDataUrl = dataUrl, fetchedAt = nowIso())
+    }
+
+    private fun validateCaptchaData(dataUrl: String) {
+        val encoded = dataUrl.substringAfter("base64,", "")
+        if (encoded.isBlank() || encoded.length > 1_400_000 ||
+            runCatching { Base64.getDecoder().decode(encoded).isNotEmpty() }.getOrDefault(false).not()
+        ) {
+            throw IOException("统一认证验证码图片无效，请刷新后重试。")
+        }
+    }
+
+    private suspend fun loadInlineLoginPage(): InlineLoginState {
+        inlineLoginState = null
         validationCache.clear()
         VeSessionContextCache.clear()
         cookieJar.clear()
         val loginPage = httpClient.getText(endpoints.misHomeUrl)
-        if (!isCasLoginUrl(loginPage.url)) {
-            throw SessionExpiredException("当前会话似乎已登录，请直接同步或先退出登录。")
+        if (!hasCampusLoginForm(loginPage.body)) {
+            throw SessionExpiredException("未获取到统一认证登录页，请检查网络后重试。")
         }
-
-        val state = parseInlineLoginPage(loginPage.url, loginPage.body)
-        val captcha = httpClient.getBytes(
-            state.captchaUrl,
-            headers = mapOf("Referer" to loginPage.url),
-        )
-        val mimeType = captcha.headers["Content-Type"]?.substringBefore(";")?.trim().orEmpty()
-            .ifBlank { "image/jpeg" }
-        val encoded = Base64.getEncoder().encodeToString(captcha.body)
-        val dataUrl = "data:$mimeType;base64,$encoded"
-        inlineLoginState = state.copy(
+        requireTrustedLoginOrigin(loginPage.url)
+        return InlineLoginState(
+            page = parseCampusLoginPage(loginPage.url, loginPage.body),
+            referer = loginPage.url,
             cookiesJson = cookieJar.encodeSnapshot(),
-            captchaImageBase64 = encoded,
-            captchaMimeType = mimeType,
         )
-        SessionCaptcha(imageDataUrl = dataUrl, fetchedAt = nowIso())
+    }
+
+    private fun requireTrustedLoginOrigin(url: String) {
+        val uri = URI(url)
+        val configured = URI(endpoints.casOrigin)
+        if (!(uri.scheme == configured.scheme && uri.host == configured.host && uri.port == configured.port) &&
+            !(uri.scheme == "https" && uri.host in setOf("cas.bjtu.edu.cn", "sso.bjtu.edu.cn") && uri.port in listOf(-1, 443))
+        ) {
+            throw IOException("统一认证页面来源不受信任，已停止登录。")
+        }
     }
 
     suspend fun loginInline(
@@ -125,27 +182,51 @@ class SessionManager(
         persistCredentials: Boolean = true,
     ): SessionStatus = mutex.withLock {
         val state = inlineLoginState ?: throw SessionExpiredException("验证码已失效，请刷新后重试。")
+        inlineLoginState = null
         VeSessionContextCache.clear()
         cookieJar.restoreFromJson(state.cookiesJson)
+        val form = state.page.fields.toMutableMap()
+        if (state.page.isSso) {
+            if (state.page.captchaRequired && (state.captchaId == null || captcha.isBlank())) {
+                inlineLoginState = state
+                throw SessionExpiredException("请输入验证码后登录。")
+            }
+            form["username"] = loginName.trim()
+            form["password"] = encryptSsoPassword(password, requireNotNull(state.page.sm2PublicKey))
+            form["loginType"] = "username_password"
+            form["captcha"] = state.captchaId?.let { id ->
+                buildJsonObject { put("captchaId", id); put("captchaValue", captcha.trim()) }.toString()
+            }.orEmpty()
+        } else {
+            form["loginname"] = loginName.trim()
+            form["password"] = password
+            form["captcha_1"] = captcha.trim()
+        }
+        val origin = URI(state.referer).let { "${it.scheme}://${it.rawAuthority}" }
         val response = httpClient.postForm(
-            state.loginUrl,
-            form = mapOf(
-                "next" to state.next,
-                "csrfmiddlewaretoken" to state.csrf,
-                "loginname" to loginName.trim(),
-                "password" to password,
-                "captcha_0" to state.captcha0,
-                "captcha_1" to captcha.trim(),
-            ),
+            state.page.loginUrl,
+            form = form,
             headers = mapOf(
                 "Referer" to state.referer,
-                "Origin" to endpoints.casOrigin,
+                "Origin" to origin,
             ),
         )
 
+        if (hasCampusLoginForm(response.body)) {
+            requireTrustedLoginOrigin(response.url)
+            val page = parseCampusLoginPage(response.url, response.body)
+            if (page.isSso) {
+                inlineLoginState = InlineLoginState(page, response.url, cookieJar.encodeSnapshot())
+            }
+            throw SessionExpiredException(page.errorMessage ?: extractInlineLoginError(response.body) ?: "登录失败，请检查账号、密码和验证码。")
+        }
         if (isCasLoginUrl(response.url)) {
-            inlineLoginState = null
             throw SessionExpiredException(extractInlineLoginError(response.body) ?: "登录失败，请检查账号、密码和验证码。")
+        }
+
+        val home = if (response.url == endpoints.misHomeUrl) response else httpClient.getText(endpoints.misHomeUrl)
+        if (isCasLoginUrl(home.url) || hasCampusLoginForm(home.body)) {
+            throw SessionExpiredException("统一认证尚未建立 MIS 会话，请重新登录。")
         }
 
         val aaReady = ensureAaSessionReady()
@@ -156,11 +237,15 @@ class SessionManager(
 
         bootstrapVeSessionBestEffort()
         cookieStore.save(cookieJar.encodeSnapshot())
+        val status = validateSession()
+        if (status.state != SessionState.Ready) {
+            throw SessionExpiredException(status.detail ?: "统一认证会话校验失败，请重新登录。")
+        }
         if (persistCredentials) {
             credentialStore.save(LoginCredentials(loginName.trim(), password))
         }
         inlineLoginState = null
-        validateSession()
+        status
     }
 
     suspend fun loginAuto(loginName: String? = null, password: String? = null): AutoLoginResult {
@@ -177,19 +262,35 @@ class SessionManager(
         val maxAttempts = if (explicitCredentials) 2 else 3
         var lastMessage = ""
         repeat(maxAttempts) { index ->
+            var isSsoAttempt = false
             try {
-                fetchInlineLoginCaptcha()
-                val captchaBytes = currentCaptchaBytes()
-                val solved = withContext(Dispatchers.Default) { captchaSolver.solve(captchaBytes) }
+                val page = mutex.withLock { loadInlineLoginPage().also { inlineLoginState = it }.page }
+                isSsoAttempt = page.isSso
+                val solved = if (page.isSso) {
+                    if (page.captchaRequired) {
+                        if (!explicitCredentials) {
+                            return AutoLoginResult(AutoLoginStatus.AutoFailed, "统一认证需要验证码，请手动登录。", index + 1)
+                        }
+                        return AutoLoginResult(
+                            AutoLoginStatus.ManualRequired, "统一认证需要验证码，请输入后登录。", index + 1,
+                            captcha = fetchInlineLoginCaptcha(),
+                        )
+                    }
+                    null
+                } else {
+                    fetchInlineLoginCaptcha(reusePreparedCasPage = true)
+                    val captchaBytes = currentCaptchaBytes()
+                    withContext(Dispatchers.Default) { captchaSolver.solve(captchaBytes) }
+                }
                 val status = loginInline(
                     credentials.loginName,
                     credentials.password,
-                    solved.answer,
+                    solved?.answer.orEmpty(),
                     persistCredentials = true,
                 )
                 return AutoLoginResult(
                     status = AutoLoginStatus.Ready,
-                    message = "已自动识别验证码算式 ${solved.expression} 并完成登录。",
+                    message = if (solved == null) "统一认证登录成功。" else "已自动识别验证码并完成登录。",
                     attempts = index + 1,
                     session = status,
                 )
@@ -215,6 +316,18 @@ class SessionManager(
                 }
             } catch (error: SessionExpiredException) {
                 lastMessage = error.message.orEmpty()
+                if (isSsoAttempt) {
+                    if (explicitCredentials && inlineLoginState?.page?.captchaRequired == true) {
+                        val captcha = try {
+                            fetchInlineLoginCaptcha()
+                        } catch (loadError: IOException) {
+                            return AutoLoginResult(AutoLoginStatus.AutoFailed, loadError.message, index + 1)
+                        }
+                        return AutoLoginResult(AutoLoginStatus.ManualRequired, lastMessage, index + 1, captcha = captcha)
+                    }
+                    inlineLoginState = null
+                    return AutoLoginResult(AutoLoginStatus.AutoFailed, lastMessage, index + 1)
+                }
             } catch (error: IOException) {
                 lastMessage = error.message.orEmpty()
                 inlineLoginState = null
@@ -286,7 +399,7 @@ class SessionManager(
         cookieJar.restoreFromJson(payload)
         return runCatching {
             val response = httpClient.getText(endpoints.misHomeUrl)
-            if (isCasLoginUrl(response.url)) {
+            if (isCasLoginUrl(response.url) || hasCampusLoginForm(response.body)) {
                 VeSessionContextCache.clear()
                 SessionStatus(SessionState.Expired, "会话已过期，请重新登录。")
             } else {
@@ -410,7 +523,7 @@ class SessionManager(
         val response = httpClient.getText(endpoints.aaTimetableUrl)
         val head = response.body.take(4096)
         when {
-            response.url.contains("/client/login/") || isAaLoginPage(response.url, head) -> "login_required" to null
+            isCasLoginUrl(response.url) || hasCampusLoginForm(response.body) || isAaLoginPage(response.url, head) -> "login_required" to null
             else -> "ready" to null
         }
     }.getOrElse { "error" to "教学支撑平台会话校验失败：${it.message}" }
@@ -421,48 +534,17 @@ class SessionManager(
             headers = mapOf("Referer" to endpoints.misHomeUrl),
         )
         val loginUrl = extractAaClientLoginUrl(bridge.body) ?: return false
-        httpClient.getText(loginUrl, headers = mapOf("Referer" to endpoints.misReferer))
-        true
+        val response = httpClient.getText(loginUrl, headers = mapOf("Referer" to endpoints.misReferer))
+        !isCasLoginUrl(response.url) && !hasCampusLoginForm(response.body)
     }.getOrDefault(false)
 
     private suspend fun bootstrapVeSessionBestEffort(): Boolean = runCatching {
-        httpClient.getText(
+        val response = httpClient.getText(
             endpoints.bksyVeBridgeUrl,
             headers = mapOf("Referer" to endpoints.bksyReferer),
         )
-        true
+        !isCasLoginUrl(response.url) && !hasCampusLoginForm(response.body)
     }.getOrDefault(false)
-
-    private fun parseInlineLoginPage(pageUrl: String, html: String): InlineLoginState {
-        val document = Jsoup.parse(html, pageUrl)
-        val form = document.selectFirst("form#login")
-            ?: document.selectFirst("form[name=login]")
-            ?: document.selectFirst("form:has(input[name=loginname]):has(input[name=password])")
-            ?: document.selectFirst("form")
-            ?: throw SessionExpiredException("未能解析统一认证登录表单。")
-        fun inputValue(name: String): String =
-            form.selectFirst("input[name=$name]")?.attr("value")?.let(::normalizeSpace)
-                ?.takeIf { it.isNotBlank() }
-                ?: throw SessionExpiredException("登录表单缺少字段 $name。")
-
-        val captchaImg = form.selectFirst("img.captcha, img[alt=captcha]")
-            ?: document.selectFirst("img.captcha, img[alt=captcha]")
-            ?: throw SessionExpiredException("未找到验证码图片。")
-        val captchaUrl = captchaImg.absUrl("src")
-            .takeIf { it.isNotBlank() }
-            ?: throw SessionExpiredException("验证码图片地址为空。")
-        return InlineLoginState(
-            loginUrl = form.absUrl("action").ifBlank { pageUrl },
-            captchaUrl = captchaUrl,
-            next = inputValue("next"),
-            csrf = inputValue("csrfmiddlewaretoken"),
-            captcha0 = inputValue("captcha_0"),
-            referer = pageUrl,
-            cookiesJson = cookieJar.encodeSnapshot(),
-            captchaImageBase64 = "",
-            captchaMimeType = "image/jpeg",
-        )
-    }
 
     private fun extractInlineLoginError(html: String): String? {
         val document = Jsoup.parse(html)
@@ -475,7 +557,7 @@ class SessionManager(
     }
 
     private fun isCasLoginUrl(url: String): Boolean {
-        if (url.contains("cas.bjtu.edu.cn${endpoints.casLoginPath}")) return true
+        if (isBjtuCasLoginUrl(url)) return true
         val path = runCatching { URI(url).path }.getOrNull().orEmpty()
         return path == endpoints.casLoginPath || path.startsWith("${endpoints.casLoginPath}/")
     }
@@ -490,14 +572,10 @@ class SessionManager(
         OffsetDateTime.now(ZoneOffset.UTC).withNano(0).toString()
 
     private data class InlineLoginState(
-        val loginUrl: String,
-        val captchaUrl: String,
-        val next: String,
-        val csrf: String,
-        val captcha0: String,
+        val page: CampusLoginPage,
         val referer: String,
         val cookiesJson: String,
-        val captchaImageBase64: String,
-        val captchaMimeType: String,
+        val captchaImageBase64: String = "",
+        val captchaId: String? = null,
     )
 }

@@ -71,18 +71,27 @@ fun LoginScreen(
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    suspend fun refreshCaptcha() {
+        captchaDataUrl = null
+        fetchedAt = null
+        captchaText = ""
+        runCatching { sessionRepository.captcha() }
+            .onSuccess {
+                captchaDataUrl = it.imageDataUrl
+                fetchedAt = it.fetchedAt
+            }
+            .onFailure { error = it.message ?: "验证码加载失败，请点击重试。" }
+    }
+
     fun loadCaptcha() {
         scope.launch {
             busy = true
             error = null
-            runCatching { sessionRepository.captcha() }
-                .onSuccess {
-                    captchaDataUrl = it.imageDataUrl
-                    fetchedAt = it.fetchedAt
-                    captchaText = ""
-                }
-                .onFailure { error = it.message ?: "验证码加载失败" }
-            busy = false
+            try {
+                refreshCaptcha()
+            } finally {
+                busy = false
+            }
         }
     }
 
@@ -118,7 +127,7 @@ fun LoginScreen(
                 .onFailure {
                     error = it.message ?: "登录失败"
                     showManualCaptcha = true
-                    loadCaptcha()
+                    refreshCaptcha()
                 }
             busy = false
         }

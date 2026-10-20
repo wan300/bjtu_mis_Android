@@ -30,7 +30,8 @@ internal fun isBjtuCasLoginUrl(url: String): Boolean {
     val path = uri.path.orEmpty()
     return path == "/auth/login" ||
         path.startsWith("/auth/login/") ||
-        (uri.host.equals("cas.bjtu.edu.cn", ignoreCase = true) && path.startsWith("/auth/"))
+        (uri.host?.lowercase() in setOf("cas.bjtu.edu.cn", "sso.bjtu.edu.cn") &&
+            (path.startsWith("/auth/") || path.startsWith("/sso/") || path.startsWith("/o/authorize")))
 }
 
 class SessionExpiredException(message: String) : RuntimeException(message)

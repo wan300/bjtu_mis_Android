@@ -1,0 +1,20 @@
+<!doctype html>
+<html><body>
+<form id="loginForm" method="post" action="/sso/login">
+  <input name="username" type="text">
+  <input name="password" type="password">
+  <input name="flowId" value="test-flow">
+  <input name="client_id" value="test-client">
+  <input name="redirect_uri" value="https://mis.example/auth/callback/">
+  <input name="response_type" value="code">
+  <input name="state" value="test-state">
+  <input name="loginType" value="username_password">
+  <input name="captcha" value="">
+</form>
+<iframe id="loginIframe"></iframe>
+<script>
+var error = null;
+var ssoConfig = {"sm2":{"enabled":true,"publicKey":"TEST_SM2_PUBLIC_KEY"},"captchaProvider":{"name":"penggle","scene":"image"}};
+var pageName = "login";
+</script>
+</body></html>
