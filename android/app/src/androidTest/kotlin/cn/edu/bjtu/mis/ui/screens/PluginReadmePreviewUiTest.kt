@@ -2,12 +2,11 @@ package cn.edu.bjtu.mis.ui.screens
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import cn.edu.bjtu.mis.ui.components.LoadState
 import org.junit.Assert.assertTrue
@@ -22,6 +21,7 @@ class PluginReadmePreviewUiTest {
 
     @Test
     fun longRequirementsScrollWithoutDisplacingTheReadme() {
+        val requirementLabels = (0..199).map { "Requirement $it" }
         compose.setContent {
             MaterialTheme {
                 PluginReadmePreviewDialog(
@@ -30,7 +30,7 @@ class PluginReadmePreviewUiTest {
                         owner = "alice",
                         repository = "demo",
                         commitSha = "abc1234",
-                        requirements = (0..199).map { "Requirement $it" },
+                        requirements = requirementLabels,
                     ),
                     state = LoadState.Data("# Plugin README\n\nPlugin documentation."),
                     onRetry = {},
@@ -45,9 +45,15 @@ class PluginReadmePreviewUiTest {
         val content = compose.onNodeWithTag("plugin-readme-content")
         requirements.assertIsDisplayed()
         content.assertIsDisplayed()
-        assertTrue(content.fetchSemanticsNode().boundsInRoot.height > requirements.fetchSemanticsNode().boundsInRoot.height)
-        requirements.performScrollToNode(hasText("Requirement 199"))
-        compose.onNodeWithText("Requirement 199").assertIsDisplayed()
+        val contentNode = content.fetchSemanticsNode()
+        val requirementsNode = requirements.fetchSemanticsNode()
+        compose.runOnIdle {
+            assertTrue(contentNode.boundsInRoot.height > requirementsNode.boundsInRoot.height)
+        }
+        // Avoid repeatedly traversing lazy-list semantics while scroll/layout is in progress.
+        requirements.performScrollToIndex(requirementLabels.lastIndex)
+        compose.waitForIdle()
+        compose.onNodeWithText(requirementLabels.last()).assertIsDisplayed()
         content.assertIsDisplayed()
 
         compose.onNodeWithText("收起权限与运行要求").performClick()

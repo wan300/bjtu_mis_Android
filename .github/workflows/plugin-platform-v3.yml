@@ -164,7 +164,7 @@ jobs:
           script: cd android && ./gradlew :app:connectedDebugAndroidTest -PtargetAbis=x86_64
       - name: Upload Android instrumentation diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: android-instrumentation-api-${{ matrix.api-level }}-diagnostics
           path: |
