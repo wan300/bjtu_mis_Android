@@ -1580,9 +1580,486 @@
       ]
     },
     {
+      "id": "android.credentials.import@1",
+      "stability": "beta",
+      "runtimeFloor": 5,
+      "permission": {
+        "id": "android.credentials.import",
+        "description": "按包名在前台逐次确认应用自行提供的结构化登录态；持续通知，不读取宿主或其他应用私有凭据。"
+      },
+      "confirmation": "userGesture",
+      "idempotency": "none",
+      "quota": {
+        "requestsPerMinute": 6,
+        "payloadBytes": 262144
+      },
+      "timeoutMs": 60000,
+      "support": {
+        "androidMinApi": 26,
+        "webViewFeatures": [
+          "DOCUMENT_START_SCRIPT",
+          "WEB_MESSAGE_LISTENER"
+        ]
+      },
+      "methods": [
+        {
+          "name": "import",
+          "request": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "packageName",
+              "credentials"
+            ],
+            "properties": {
+              "packageName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$"
+              },
+              "credentials": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {
+                  "identity": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "umid": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "userAgent": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048
+                  },
+                  "cookies": {
+                    "type": "array",
+                    "maxItems": 128,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "name",
+                        "value",
+                        "domain"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "value": {
+                          "type": "string",
+                          "maxLength": 8192
+                        },
+                        "domain": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 253
+                        },
+                        "path": {
+                          "type": "string",
+                          "maxLength": 2048
+                        },
+                        "secure": {
+                          "type": "boolean"
+                        },
+                        "httpOnly": {
+                          "type": "boolean"
+                        },
+                        "expiresAtMs": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      }
+                    }
+                  },
+                  "refreshToken": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16384
+                  }
+                }
+              }
+            }
+          },
+          "response": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {
+              "identity": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192
+              },
+              "umid": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192
+              },
+              "userAgent": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048
+              },
+              "cookies": {
+                "type": "array",
+                "maxItems": 128,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "value",
+                    "domain"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "value": {
+                      "type": "string",
+                      "maxLength": 8192
+                    },
+                    "domain": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 253
+                    },
+                    "path": {
+                      "type": "string",
+                      "maxLength": 2048
+                    },
+                    "secure": {
+                      "type": "boolean"
+                    },
+                    "httpOnly": {
+                      "type": "boolean"
+                    },
+                    "expiresAtMs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  }
+                }
+              },
+              "refreshToken": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16384
+              }
+            }
+          },
+          "errors": [
+            "foreground_required",
+            "user_cancelled",
+            "capability_unavailable",
+            "quota_exceeded",
+            "invalid_request"
+          ]
+        }
+      ],
+      "events": []
+    },
+    {
+      "id": "android.background.task@1",
+      "stability": "beta",
+      "runtimeFloor": 5,
+      "permission": {
+        "id": "android.background.task",
+        "description": "持久授权的原生定时回调；前台安排、最长60分钟、持续通知和全部停止，不承诺精确定时或永久存活。"
+      },
+      "confirmation": "none",
+      "idempotency": "required",
+      "quota": {
+        "activeTasksPerPlugin": 4,
+        "minIntervalMs": 1000,
+        "maxDurationMs": 3600000,
+        "requestsPerMinute": 6
+      },
+      "timeoutMs": 60000,
+      "support": {
+        "androidMinApi": 26,
+        "webViewFeatures": [
+          "DOCUMENT_START_SCRIPT",
+          "WEB_MESSAGE_LISTENER"
+        ]
+      },
+      "methods": [
+        {
+          "name": "schedule",
+          "request": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "idempotencyKey",
+              "callbackId",
+              "intervalMs",
+              "maxDurationMs"
+            ],
+            "properties": {
+              "idempotencyKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "callbackId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "intervalMs": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 3600000
+              },
+              "maxDurationMs": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 3600000
+              }
+            }
+          },
+          "response": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "receiptId",
+              "idempotencyKey",
+              "completedAt",
+              "result"
+            ],
+            "properties": {
+              "receiptId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "idempotencyKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "completedAt": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "result": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "taskId",
+                  "callbackId",
+                  "intervalMs",
+                  "expiresAtMs"
+                ],
+                "properties": {
+                  "taskId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "callbackId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "intervalMs": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "maximum": 3600000
+                  },
+                  "expiresAtMs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                }
+              }
+            }
+          },
+          "errors": [
+            "foreground_required",
+            "user_cancelled",
+            "capability_unavailable",
+            "quota_exceeded",
+            "idempotency_conflict",
+            "invalid_request"
+          ]
+        },
+        {
+          "name": "cancel",
+          "request": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "idempotencyKey",
+              "taskId"
+            ],
+            "properties": {
+              "idempotencyKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "taskId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          },
+          "response": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "receiptId",
+              "idempotencyKey",
+              "completedAt",
+              "result"
+            ],
+            "properties": {
+              "receiptId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "idempotencyKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "completedAt": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "result": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "cancelled"
+                ],
+                "properties": {
+                  "cancelled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          "errors": [
+            "idempotency_conflict"
+          ]
+        },
+        {
+          "name": "list",
+          "request": {
+            "$ref": "#/schemas/empty"
+          },
+          "response": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "tasks"
+            ],
+            "properties": {
+              "tasks": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "taskId",
+                    "callbackId",
+                    "intervalMs",
+                    "expiresAtMs"
+                  ],
+                  "properties": {
+                    "taskId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "callbackId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "intervalMs": {
+                      "type": "integer",
+                      "minimum": 1000,
+                      "maximum": 3600000
+                    },
+                    "expiresAtMs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "errors": []
+        }
+      ],
+      "events": [
+        {
+          "name": "tick",
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "taskId",
+              "callbackId",
+              "scheduledAtMs",
+              "expiresAtMs"
+            ],
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "callbackId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "scheduledAtMs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "expiresAtMs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
       "id": "network.request@1",
       "stability": "beta",
-      "runtimeFloor": 2,
+      "runtimeFloor": 5,
       "permission": {
         "id": "network.request",
         "title": "通过宿主访问公网",
@@ -1636,6 +2113,7 @@
                   "json",
                   "text",
                   "formData",
+                  "formUrlEncoded",
                   "blob"
                 ]
               },
@@ -1709,6 +2187,165 @@
               "phase": {
                 "type": "string",
                 "enum": ["upload", "response"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "network.request@2",
+      "stability": "beta",
+      "runtimeFloor": 5,
+      "permission": {
+        "id": "network.request.cookies",
+        "title": "使用隔离的公网 Cookie 会话",
+        "description": "仅显式 credentials=include 时使用按发布者、插件与精确 origin 隔离的内存 Cookie；不访问宿主 Cookie。"
+      },
+      "confirmation": "none",
+      "idempotency": "none",
+      "quota": {
+        "pluginConcurrency": 4,
+        "originConcurrency": 2,
+        "inlineResponseBytes": 1048576,
+        "redirects": 5,
+        "cookiesPerOrigin": 128,
+        "cookieOriginsPerPlugin": 32
+      },
+      "timeoutMs": 15000,
+      "maxTimeoutMs": 60000,
+      "support": {
+        "androidMinApi": 26,
+        "webViewFeatures": []
+      },
+      "methods": [
+        {
+          "name": "request",
+          "request": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "GET",
+                  "HEAD",
+                  "POST",
+                  "PUT",
+                  "PATCH",
+                  "DELETE"
+                ]
+              },
+              "headers": {
+                "type": "object"
+              },
+              "body": {},
+              "bodyType": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "text",
+                  "formData",
+                  "formUrlEncoded",
+                  "blob"
+                ]
+              },
+              "timeoutMs": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 60000
+              },
+              "credentials": {
+                "type": "string",
+                "enum": [
+                  "omit",
+                  "include"
+                ],
+                "default": "omit"
+              }
+            }
+          },
+          "response": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "headers",
+              "bodyType",
+              "finalUrl",
+              "redirects"
+            ],
+            "properties": {
+              "status": {
+                "type": "integer"
+              },
+              "headers": {
+                "type": "object"
+              },
+              "bodyType": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "text",
+                  "resource"
+                ]
+              },
+              "body": {},
+              "resource": {
+                "$ref": "#/schemas/resourceHandle"
+              },
+              "finalUrl": {
+                "type": "string"
+              },
+              "redirects": {
+                "type": "integer"
+              },
+              "contentType": {
+                "type": "string"
+              }
+            }
+          },
+          "errors": [
+            "origin_denied",
+            "network_timeout",
+            "http_error",
+            "quota_exceeded",
+            "resource_too_large",
+            "user_cancelled"
+          ]
+        }
+      ],
+      "events": [
+        {
+          "name": "progress",
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "loaded",
+              "phase"
+            ],
+            "properties": {
+              "loaded": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "phase": {
+                "type": "string",
+                "enum": [
+                  "upload",
+                  "response"
+                ]
               }
             }
           }
@@ -2581,14 +3218,15 @@
     {
       "id": "android.network.status@1",
       "stability": "beta",
-      "runtimeFloor": 2,
-      "permission": { "id": "android.network.status", "description": "读取和订阅最小化网络状态；不返回 SSID、BSSID、MAC 或 IP。" },
+      "runtimeFloor": 5,
+      "permission": { "id": "android.network.status", "description": "读取和订阅最小化网络状态；不返回 SSID、BSSID 或 MAC；地址查询需逐次前台确认。" },
       "confirmation": "none",
       "idempotency": "none",
       "quota": { "subscriptionsPerPlugin": 16, "eventsPerSecond": 60 },
-      "timeoutMs": 5000,
+      "timeoutMs": 60000,
       "support": { "androidMinApi": 26, "webViewFeatures": ["DOCUMENT_START_SCRIPT", "WEB_MESSAGE_LISTENER"] },
       "methods": [
+        {"name": "getAddresses", "request": {"type": "object", "additionalProperties": false, "required": [], "properties": {"publicIpUrl": {"type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^https://"}}}, "response": {"type": "object", "additionalProperties": false, "required": [], "properties": {"localIpv4": {"type": "string", "minLength": 1, "maxLength": 15, "pattern": "^[0-9.]+$"}, "publicIp": {"type": "string", "minLength": 1, "maxLength": 45}}}, "errors": ["foreground_required", "user_cancelled", "capability_unavailable", "quota_exceeded", "origin_denied", "http_error", "network_timeout", "invalid_request"]},
         { "name": "getStatus", "request": { "$ref": "#/schemas/empty" }, "response": { "type": "object", "additionalProperties": false, "required": ["online", "validated", "metered", "transport"], "properties": { "online": { "type": "boolean" }, "validated": { "type": "boolean" }, "metered": { "type": "boolean" }, "transport": { "type": "string", "enum": ["wifi", "cellular", "ethernet", "vpn", "other", "none"] } } }, "errors": ["capability_unavailable"] },
         { "name": "subscribe", "request": { "type": "object", "additionalProperties": false, "properties": { "persistent": { "type": "boolean", "default": false } } }, "response": { "type": "object", "additionalProperties": false, "required": ["subscriptionId", "persistent"], "properties": { "subscriptionId": { "type": "string" }, "persistent": { "type": "boolean" } } }, "errors": ["quota_exceeded", "capability_unavailable"] },
         { "name": "unsubscribe", "request": { "type": "object", "additionalProperties": false, "required": ["subscriptionId"], "properties": { "subscriptionId": { "type": "string", "minLength": 1, "maxLength": 160 } } }, "response": { "type": "object", "additionalProperties": false, "required": ["deleted"], "properties": { "deleted": { "type": "boolean" } } }, "errors": [] }

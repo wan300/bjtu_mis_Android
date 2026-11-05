@@ -27,7 +27,11 @@ import java.util.concurrent.atomic.AtomicLong
 /** Repository hooks remain available even when no plugin page is open. */
 internal object PluginSessionKeepAlive {
     var provider: PluginSessionKeepAliveProvider? = null
-    fun revoke(publisher: String, plugin: String) { provider?.revoke(KeepAliveOwner(publisher, plugin)) }
+    fun revoke(publisher: String, plugin: String) {
+        PluginNetworkSessions.provider?.clearSessions(publisher, plugin)
+        PluginBackgroundTasks.revoke(publisher, plugin)
+        provider?.revoke(KeepAliveOwner(publisher, plugin))
+    }
     fun owners(): Set<PluginAutomationIdentity> = provider?.owners().orEmpty()
     fun attach(publisher: String, plugin: String, runtimeId: String, background: Boolean,
         capabilities: Set<String>, sink: (PluginRuntimeEvent) -> Unit) {

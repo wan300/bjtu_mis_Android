@@ -5,6 +5,7 @@ import cn.edu.bjtu.mis.data.AppJson
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import java.io.File
+import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.StandardCopyOption
@@ -22,6 +23,7 @@ data class PluginAutomationSubscriptionRecord(
     val capability: String = "android.accessibility.events@1",
     val sensor: String? = null,
     val rateHz: Int? = null,
+    val task: PluginBackgroundTaskRecord? = null,
 )
 
 interface PluginAutomationStore {
@@ -93,14 +95,11 @@ class FilePluginAutomationStore(
     }
 
     override fun clear(): Unit = synchronized(lock) {
-        root.listFiles().orEmpty().filter(File::isFile).forEach { file ->
-            val records = read(file)
-            val identity = records?.firstOrNull()
-            if (identity != null) {
-                removeService(identity.publisherSubjectId, identity.serviceId)
-            } else {
-                file.delete()
-            }
+        root.listFiles().orEmpty().filter { it.isFile && it.extension == "bin" }.forEach { file ->
+            val barrier = barrierFor(file)
+            FileOutputStream(barrier).use { output -> output.write(1); output.fd.sync() }
+            // Keep the tombstone until the old ciphertext is gone, including interrupted cleanup.
+            if (file.delete()) barrier.delete()
         }
     }
 
@@ -116,6 +115,8 @@ class FilePluginAutomationStore(
 
     private fun read(file: File): List<PluginAutomationSubscriptionRecord>? {
         if (!file.isFile) return null
+        // Interrupted writes/revocations must never resurrect a previous active task snapshot.
+        if (barrierFor(file).exists()) return null
         return runCatching {
             val encrypted = file.readBytes()
             val envelope = AppJson.decodeFromString<AutomationEnvelope>(
@@ -143,6 +144,9 @@ class FilePluginAutomationStore(
         records: List<PluginAutomationSubscriptionRecord>,
     ) {
         root.mkdirs()
+        val destination = fileFor(publisherSubjectId, serviceId)
+        val barrier = barrierFor(destination)
+        FileOutputStream(barrier).use { output -> output.write(1); output.fd.sync() }
         val plaintext = AppJson.encodeToString(records).toByteArray(Charsets.UTF_8)
         val envelope = AutomationEnvelope(
             publisherSubjectId = publisherSubjectId,
@@ -153,7 +157,6 @@ class FilePluginAutomationStore(
             AppJson.encodeToString(envelope).toByteArray(Charsets.UTF_8),
             FILE_ASSOCIATED_DATA,
         )
-        val destination = fileFor(publisherSubjectId, serviceId)
         val temporary = File(root, ".${destination.name}.${System.nanoTime()}.tmp")
         temporary.writeBytes(encrypted)
         try {
@@ -172,7 +175,10 @@ class FilePluginAutomationStore(
         } finally {
             temporary.delete()
         }
+        check(barrier.delete()) { "Automation store requires recovery" }
     }
+
+    private fun barrierFor(file: File) = File(root, ".${file.name}.pending")
 
     @Serializable
     private data class AutomationEnvelope(

@@ -45,7 +45,10 @@ export const CAPABILITY_IDS = [
   "academic.resources@1",
   "mail.read@1",
   "campus.request@1",
+  "android.credentials.import@1",
+  "android.background.task@1",
   "network.request@1",
+  "network.request@2",
   "storage.kv@2",
   "storage.blob@1",
   "cache.resource@1",
@@ -97,7 +100,12 @@ export interface CapabilityMethodMap {
   "mail.read@1#listMessages": { request: { "folderId"?: string; "start"?: number; "limit"?: number; "forceRefresh"?: boolean }; response: { "data": { "folderId": string; "start": number; "limit": number; "total": number; "messages": Array<Record<string, unknown>> }; "meta": { "syncedAt": string; "source": "cache" | "network" | "mixed"; "coverage": "complete" | "partial" | "unknown"; "fromCache": boolean } } };
   "mail.read@1#getMessage": { request: { "messageId": string; "mailbox"?: string }; response: { "data": { "messageId": string; "folderId": string; "subject": string; "fromText": string; "toText": string; "sender"?: string; "sentAt"?: string; "receivedAt"?: string; "modifiedAt"?: string; "size": number; "read": boolean; "attached": boolean; "priority"?: number; "summary"?: string; "fromList": Array<string>; "toList": Array<string>; "ccList": Array<string>; "bccList": Array<string>; "htmlContent": string; "headers": Record<string, unknown>; "attachments": Array<Record<string, unknown>> }; "meta": { "syncedAt": string; "source": "cache" | "network" | "mixed"; "coverage": "complete" | "partial" | "unknown"; "fromCache": boolean } } };
   "campus.request@1#request": { request: { "service": "mis" | "aa" | "ve"; "method"?: "GET" | "HEAD"; "path": string; "query"?: Record<string, unknown>; "accept"?: string }; response: { "data": unknown; "meta": { "syncedAt": string; "source": "cache" | "network" | "mixed"; "coverage": "complete" | "partial" | "unknown"; "fromCache": boolean } } };
-  "network.request@1#request": { request: { "url": string; "method"?: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE"; "headers"?: Record<string, unknown>; "body"?: unknown; "bodyType"?: "json" | "text" | "formData" | "blob"; "timeoutMs"?: number }; response: { "status": number; "headers": Record<string, unknown>; "bodyType": "json" | "text" | "resource"; "body"?: unknown; "resource"?: { "handle": string; "size": number; "contentType": string; "url": string; "etag"?: string; "pinned"?: boolean }; "finalUrl": string; "redirects": number; "contentType"?: string } };
+  "android.credentials.import@1#import": { request: { "packageName": string; "credentials": { "identity"?: string; "umid"?: string; "userAgent"?: string; "cookies"?: Array<{ "name": string; "value": string; "domain": string; "path"?: string; "secure"?: boolean; "httpOnly"?: boolean; "expiresAtMs"?: number }>; "refreshToken"?: string } }; response: { "identity"?: string; "umid"?: string; "userAgent"?: string; "cookies"?: Array<{ "name": string; "value": string; "domain": string; "path"?: string; "secure"?: boolean; "httpOnly"?: boolean; "expiresAtMs"?: number }>; "refreshToken"?: string } };
+  "android.background.task@1#schedule": { request: { "idempotencyKey": string; "callbackId": string; "intervalMs": number; "maxDurationMs": number }; response: { "receiptId": string; "idempotencyKey": string; "completedAt": string; "result": { "taskId": string; "callbackId": string; "intervalMs": number; "expiresAtMs": number } } };
+  "android.background.task@1#cancel": { request: { "idempotencyKey": string; "taskId": string }; response: { "receiptId": string; "idempotencyKey": string; "completedAt": string; "result": { "cancelled": boolean } } };
+  "android.background.task@1#list": { request: Record<string, never>; response: { "tasks": Array<{ "taskId": string; "callbackId": string; "intervalMs": number; "expiresAtMs": number }> } };
+  "network.request@1#request": { request: { "url": string; "method"?: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE"; "headers"?: Record<string, unknown>; "body"?: unknown; "bodyType"?: "json" | "text" | "formData" | "formUrlEncoded" | "blob"; "timeoutMs"?: number }; response: { "status": number; "headers": Record<string, unknown>; "bodyType": "json" | "text" | "resource"; "body"?: unknown; "resource"?: { "handle": string; "size": number; "contentType": string; "url": string; "etag"?: string; "pinned"?: boolean }; "finalUrl": string; "redirects": number; "contentType"?: string } };
+  "network.request@2#request": { request: { "url": string; "method"?: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE"; "headers"?: Record<string, unknown>; "body"?: unknown; "bodyType"?: "json" | "text" | "formData" | "formUrlEncoded" | "blob"; "timeoutMs"?: number; "credentials"?: "omit" | "include" }; response: { "status": number; "headers": Record<string, unknown>; "bodyType": "json" | "text" | "resource"; "body"?: unknown; "resource"?: { "handle": string; "size": number; "contentType": string; "url": string; "etag"?: string; "pinned"?: boolean }; "finalUrl": string; "redirects": number; "contentType"?: string } };
   "storage.kv@2#get": { request: { "key": string }; response: { "value": unknown; "revision": number; [key: string]: unknown } };
   "storage.kv@2#set": { request: { "key": string; "value": unknown; "ifRevision"?: number }; response: { "revision": number; "usage": { "bytesUsed": number; "byteLimit": number; "keyCount": number; "keyLimit": number; "revision": number }; "changedKeys": Array<string> } };
   "storage.kv@2#remove": { request: { "key": string; "ifRevision"?: number }; response: { "removed": boolean; "revision": number; "usage": { "bytesUsed": number; "byteLimit": number; "keyCount": number; "keyLimit": number; "revision": number }; "changedKeys": Array<string> } };
@@ -132,6 +140,7 @@ export interface CapabilityMethodMap {
   "android.packages.read@1#resolveIntent": { request: { "action": string; "dataUri"?: string }; response: { "activities": Array<{ "packageName": string; "className": string; "exported": boolean }> } };
   "android.settings.open@1#open": { request: { "action": string; "packageName"?: string }; response: { "opened": boolean; "action": string } };
   "android.device.info@1#getInfo": { request: Record<string, never>; response: { "platform": unknown; "sdkInt": number; "manufacturer": string; "model": string; "locale": string; "timezone": string; "appVersion": string } };
+  "android.network.status@1#getAddresses": { request: { "publicIpUrl"?: string }; response: { "localIpv4"?: string; "publicIp"?: string } };
   "android.network.status@1#getStatus": { request: Record<string, never>; response: { "online": boolean; "validated": boolean; "metered": boolean; "transport": "wifi" | "cellular" | "ethernet" | "vpn" | "other" | "none" } };
   "android.network.status@1#subscribe": { request: { "persistent"?: boolean }; response: { "subscriptionId": string; "persistent": boolean } };
   "android.network.status@1#unsubscribe": { request: { "subscriptionId": string }; response: { "deleted": boolean } };
@@ -178,7 +187,9 @@ export interface CapabilityEventMap {
   "runtime.lifecycle@1#resize": { data: { "viewportWidthPx": number; "viewportHeightPx": number; "density": number; "fontScale": number; "orientation": "portrait" | "landscape"; "safeAreaTopPx": number; "safeAreaRightPx": number; "safeAreaBottomPx": number; "safeAreaLeftPx": number; "imeHeightPx": number }; requiresAcknowledgement: false };
   "runtime.lifecycle@1#network": { data: { "online": boolean; "validated": boolean; "metered": boolean; "transport": string }; requiresAcknowledgement: false };
   "runtime.lifecycle@1#back": { data: Record<string, never>; requiresAcknowledgement: true };
+  "android.background.task@1#tick": { data: { "taskId": string; "callbackId": string; "scheduledAtMs": number; "expiresAtMs": number }; requiresAcknowledgement: false };
   "network.request@1#progress": { data: { "loaded": number; "total"?: number; "phase": "upload" | "response" }; requiresAcknowledgement: false };
+  "network.request@2#progress": { data: { "loaded": number; "total"?: number; "phase": "upload" | "response" }; requiresAcknowledgement: false };
   "storage.kv@2#changed": { data: { "revision": number; "keys": Array<string>; "cleared": boolean }; requiresAcknowledgement: false };
   "android.accessibility.events@1#received": { data: { "subscriptionId": string; "eventType": string; "packageName": string; "className": string; "eventTime": number; "text"?: Array<string>; "contentDescription"?: string; "source": { "nodeId": string; "windowId": number; "className": string; "packageName": string; "viewIdResourceName"?: string; "text"?: string; "contentDescription"?: string; "bounds": { "left": number; "top": number; "right": number; "bottom": number }; "actions": Array<string>; "clickable"?: boolean; "enabled"?: boolean; "focused"?: boolean; "focusable"?: boolean; "scrollable"?: boolean; "selected"?: boolean; "checked"?: boolean; "password": boolean; "sensitive": boolean; "childCount"?: number; "children"?: Array<Record<string, unknown>> } | null }; requiresAcknowledgement: false };
   "android.network.status@1#changed": { data: { "online": boolean; "validated": boolean; "metered": boolean; "transport": "wifi" | "cellular" | "ethernet" | "vpn" | "other" | "none" }; requiresAcknowledgement: false };
@@ -395,7 +406,37 @@ export const CAPABILITY_MOCK_RESPONSES = {
       "fromCache": false
     }
   },
+  "android.credentials.import@1#import": {},
+  "android.background.task@1#schedule": {
+    "receiptId": "example",
+    "idempotencyKey": "example",
+    "completedAt": "example",
+    "result": {
+      "taskId": "example",
+      "callbackId": "example",
+      "intervalMs": 1000,
+      "expiresAtMs": 0
+    }
+  },
+  "android.background.task@1#cancel": {
+    "receiptId": "example",
+    "idempotencyKey": "example",
+    "completedAt": "example",
+    "result": {
+      "cancelled": false
+    }
+  },
+  "android.background.task@1#list": {
+    "tasks": []
+  },
   "network.request@1#request": {
+    "status": 0,
+    "headers": {},
+    "bodyType": "json",
+    "finalUrl": "example",
+    "redirects": 0
+  },
+  "network.request@2#request": {
     "status": 0,
     "headers": {},
     "bodyType": "json",
@@ -636,6 +677,7 @@ export const CAPABILITY_MOCK_RESPONSES = {
     "timezone": "example",
     "appVersion": "example"
   },
+  "android.network.status@1#getAddresses": {},
   "android.network.status@1#getStatus": {
     "online": false,
     "validated": false,
@@ -3188,9 +3230,486 @@ export const CAPABILITY_REGISTRY = {
       ]
     },
     {
+      "id": "android.credentials.import@1",
+      "stability": "beta",
+      "runtimeFloor": 5,
+      "permission": {
+        "id": "android.credentials.import",
+        "description": "按包名在前台逐次确认应用自行提供的结构化登录态；持续通知，不读取宿主或其他应用私有凭据。"
+      },
+      "confirmation": "userGesture",
+      "idempotency": "none",
+      "quota": {
+        "requestsPerMinute": 6,
+        "payloadBytes": 262144
+      },
+      "timeoutMs": 60000,
+      "support": {
+        "androidMinApi": 26,
+        "webViewFeatures": [
+          "DOCUMENT_START_SCRIPT",
+          "WEB_MESSAGE_LISTENER"
+        ]
+      },
+      "methods": [
+        {
+          "name": "import",
+          "request": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "packageName",
+              "credentials"
+            ],
+            "properties": {
+              "packageName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$"
+              },
+              "credentials": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {
+                  "identity": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "umid": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "userAgent": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048
+                  },
+                  "cookies": {
+                    "type": "array",
+                    "maxItems": 128,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "name",
+                        "value",
+                        "domain"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "value": {
+                          "type": "string",
+                          "maxLength": 8192
+                        },
+                        "domain": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 253
+                        },
+                        "path": {
+                          "type": "string",
+                          "maxLength": 2048
+                        },
+                        "secure": {
+                          "type": "boolean"
+                        },
+                        "httpOnly": {
+                          "type": "boolean"
+                        },
+                        "expiresAtMs": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      }
+                    }
+                  },
+                  "refreshToken": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16384
+                  }
+                }
+              }
+            }
+          },
+          "response": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {
+              "identity": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192
+              },
+              "umid": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192
+              },
+              "userAgent": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048
+              },
+              "cookies": {
+                "type": "array",
+                "maxItems": 128,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "value",
+                    "domain"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "value": {
+                      "type": "string",
+                      "maxLength": 8192
+                    },
+                    "domain": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 253
+                    },
+                    "path": {
+                      "type": "string",
+                      "maxLength": 2048
+                    },
+                    "secure": {
+                      "type": "boolean"
+                    },
+                    "httpOnly": {
+                      "type": "boolean"
+                    },
+                    "expiresAtMs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  }
+                }
+              },
+              "refreshToken": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16384
+              }
+            }
+          },
+          "errors": [
+            "foreground_required",
+            "user_cancelled",
+            "capability_unavailable",
+            "quota_exceeded",
+            "invalid_request"
+          ]
+        }
+      ],
+      "events": []
+    },
+    {
+      "id": "android.background.task@1",
+      "stability": "beta",
+      "runtimeFloor": 5,
+      "permission": {
+        "id": "android.background.task",
+        "description": "持久授权的原生定时回调；前台安排、最长60分钟、持续通知和全部停止，不承诺精确定时或永久存活。"
+      },
+      "confirmation": "none",
+      "idempotency": "required",
+      "quota": {
+        "activeTasksPerPlugin": 4,
+        "minIntervalMs": 1000,
+        "maxDurationMs": 3600000,
+        "requestsPerMinute": 6
+      },
+      "timeoutMs": 60000,
+      "support": {
+        "androidMinApi": 26,
+        "webViewFeatures": [
+          "DOCUMENT_START_SCRIPT",
+          "WEB_MESSAGE_LISTENER"
+        ]
+      },
+      "methods": [
+        {
+          "name": "schedule",
+          "request": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "idempotencyKey",
+              "callbackId",
+              "intervalMs",
+              "maxDurationMs"
+            ],
+            "properties": {
+              "idempotencyKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "callbackId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "intervalMs": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 3600000
+              },
+              "maxDurationMs": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 3600000
+              }
+            }
+          },
+          "response": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "receiptId",
+              "idempotencyKey",
+              "completedAt",
+              "result"
+            ],
+            "properties": {
+              "receiptId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "idempotencyKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "completedAt": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "result": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "taskId",
+                  "callbackId",
+                  "intervalMs",
+                  "expiresAtMs"
+                ],
+                "properties": {
+                  "taskId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "callbackId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "intervalMs": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "maximum": 3600000
+                  },
+                  "expiresAtMs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                }
+              }
+            }
+          },
+          "errors": [
+            "foreground_required",
+            "user_cancelled",
+            "capability_unavailable",
+            "quota_exceeded",
+            "idempotency_conflict",
+            "invalid_request"
+          ]
+        },
+        {
+          "name": "cancel",
+          "request": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "idempotencyKey",
+              "taskId"
+            ],
+            "properties": {
+              "idempotencyKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "taskId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          },
+          "response": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "receiptId",
+              "idempotencyKey",
+              "completedAt",
+              "result"
+            ],
+            "properties": {
+              "receiptId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "idempotencyKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "completedAt": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "result": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "cancelled"
+                ],
+                "properties": {
+                  "cancelled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          "errors": [
+            "idempotency_conflict"
+          ]
+        },
+        {
+          "name": "list",
+          "request": {
+            "$ref": "#/schemas/empty"
+          },
+          "response": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "tasks"
+            ],
+            "properties": {
+              "tasks": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "taskId",
+                    "callbackId",
+                    "intervalMs",
+                    "expiresAtMs"
+                  ],
+                  "properties": {
+                    "taskId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "callbackId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "intervalMs": {
+                      "type": "integer",
+                      "minimum": 1000,
+                      "maximum": 3600000
+                    },
+                    "expiresAtMs": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "errors": []
+        }
+      ],
+      "events": [
+        {
+          "name": "tick",
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "taskId",
+              "callbackId",
+              "scheduledAtMs",
+              "expiresAtMs"
+            ],
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "callbackId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "scheduledAtMs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "expiresAtMs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
       "id": "network.request@1",
       "stability": "beta",
-      "runtimeFloor": 2,
+      "runtimeFloor": 5,
       "permission": {
         "id": "network.request",
         "title": "通过宿主访问公网",
@@ -3244,6 +3763,7 @@ export const CAPABILITY_REGISTRY = {
                   "json",
                   "text",
                   "formData",
+                  "formUrlEncoded",
                   "blob"
                 ]
               },
@@ -3251,6 +3771,165 @@ export const CAPABILITY_REGISTRY = {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 60000
+              }
+            }
+          },
+          "response": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "headers",
+              "bodyType",
+              "finalUrl",
+              "redirects"
+            ],
+            "properties": {
+              "status": {
+                "type": "integer"
+              },
+              "headers": {
+                "type": "object"
+              },
+              "bodyType": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "text",
+                  "resource"
+                ]
+              },
+              "body": {},
+              "resource": {
+                "$ref": "#/schemas/resourceHandle"
+              },
+              "finalUrl": {
+                "type": "string"
+              },
+              "redirects": {
+                "type": "integer"
+              },
+              "contentType": {
+                "type": "string"
+              }
+            }
+          },
+          "errors": [
+            "origin_denied",
+            "network_timeout",
+            "http_error",
+            "quota_exceeded",
+            "resource_too_large",
+            "user_cancelled"
+          ]
+        }
+      ],
+      "events": [
+        {
+          "name": "progress",
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "loaded",
+              "phase"
+            ],
+            "properties": {
+              "loaded": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "phase": {
+                "type": "string",
+                "enum": [
+                  "upload",
+                  "response"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "network.request@2",
+      "stability": "beta",
+      "runtimeFloor": 5,
+      "permission": {
+        "id": "network.request.cookies",
+        "title": "使用隔离的公网 Cookie 会话",
+        "description": "仅显式 credentials=include 时使用按发布者、插件与精确 origin 隔离的内存 Cookie；不访问宿主 Cookie。"
+      },
+      "confirmation": "none",
+      "idempotency": "none",
+      "quota": {
+        "pluginConcurrency": 4,
+        "originConcurrency": 2,
+        "inlineResponseBytes": 1048576,
+        "redirects": 5,
+        "cookiesPerOrigin": 128,
+        "cookieOriginsPerPlugin": 32
+      },
+      "timeoutMs": 15000,
+      "maxTimeoutMs": 60000,
+      "support": {
+        "androidMinApi": 26,
+        "webViewFeatures": []
+      },
+      "methods": [
+        {
+          "name": "request",
+          "request": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "GET",
+                  "HEAD",
+                  "POST",
+                  "PUT",
+                  "PATCH",
+                  "DELETE"
+                ]
+              },
+              "headers": {
+                "type": "object"
+              },
+              "body": {},
+              "bodyType": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "text",
+                  "formData",
+                  "formUrlEncoded",
+                  "blob"
+                ]
+              },
+              "timeoutMs": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 60000
+              },
+              "credentials": {
+                "type": "string",
+                "enum": [
+                  "omit",
+                  "include"
+                ],
+                "default": "omit"
               }
             }
           },
@@ -4547,10 +5226,10 @@ export const CAPABILITY_REGISTRY = {
     {
       "id": "android.network.status@1",
       "stability": "beta",
-      "runtimeFloor": 2,
+      "runtimeFloor": 5,
       "permission": {
         "id": "android.network.status",
-        "description": "读取和订阅最小化网络状态；不返回 SSID、BSSID、MAC 或 IP。"
+        "description": "读取和订阅最小化网络状态；不返回 SSID、BSSID 或 MAC；地址查询需逐次前台确认。"
       },
       "confirmation": "none",
       "idempotency": "none",
@@ -4558,7 +5237,7 @@ export const CAPABILITY_REGISTRY = {
         "subscriptionsPerPlugin": 16,
         "eventsPerSecond": 60
       },
-      "timeoutMs": 5000,
+      "timeoutMs": 60000,
       "support": {
         "androidMinApi": 26,
         "webViewFeatures": [
@@ -4567,6 +5246,50 @@ export const CAPABILITY_REGISTRY = {
         ]
       },
       "methods": [
+        {
+          "name": "getAddresses",
+          "request": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {
+              "publicIpUrl": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048,
+                "pattern": "^https://"
+              }
+            }
+          },
+          "response": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {
+              "localIpv4": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 15,
+                "pattern": "^[0-9.]+$"
+              },
+              "publicIp": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 45
+              }
+            }
+          },
+          "errors": [
+            "foreground_required",
+            "user_cancelled",
+            "capability_unavailable",
+            "quota_exceeded",
+            "origin_denied",
+            "http_error",
+            "network_timeout",
+            "invalid_request"
+          ]
+        },
         {
           "name": "getStatus",
           "request": {

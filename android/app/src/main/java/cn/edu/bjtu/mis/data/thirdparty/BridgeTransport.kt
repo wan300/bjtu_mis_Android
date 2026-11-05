@@ -91,6 +91,8 @@ class BridgeTransport(
     }
 
     fun sendEvent(event: PluginRuntimeEvent) {
+        // A delayed tick is stale work: never queue timers while a document is still loading.
+        if (event.capability == PLUGIN_BACKGROUND_TASK_CAPABILITY && eventReplyProxy == null) return
         if (eventReplyProxy == null) {
             synchronized(pendingEventsLock) {
                 if (eventReplyProxy == null) {
@@ -167,6 +169,7 @@ class BridgeTransport(
     fun close() {
         AndroidAccessibilityController.detachRuntime(runtimeId)
         AndroidNativeEventController.detachRuntime(runtimeId)
+        PluginBackgroundTasks.detach(runtimeId)
         PluginSessionKeepAlive.detach(runtimeId)
         jobs.values.forEach(Job::cancel)
         jobs.clear()

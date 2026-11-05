@@ -86,6 +86,10 @@ class PluginRuntimeHost(
             eventSink = bridge::sendEvent,
             grantedCapabilities = service.grantedCapabilities,
         )
+        PluginBackgroundTasks.attach(
+            service.publisherSubjectId, service.serviceId, bridge.runtimeId, backgroundRuntime,
+            service.grantedCapabilities, bridge::sendEvent,
+        )
         PluginSessionKeepAlive.attach(
             service.publisherSubjectId, service.serviceId, bridge.runtimeId, backgroundRuntime,
             service.grantedCapabilities, bridge::sendEvent,

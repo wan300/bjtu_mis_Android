@@ -30,6 +30,49 @@ class PluginNetworkProviderTest {
     val temp = TemporaryFolder()
 
     @Test
+    fun formEncodingPreservesUnicodeSpacesPlusAndReservedCharacters() = runBlocking {
+        MockWebServer().use { server ->
+            val origin = testOrigin(server, "form.public.test")
+            server.enqueue(MockResponse().setHeader("Content-Type", "text/plain").setBody("ok"))
+            testProvider().execute(service(origin), request("$origin/form", method = "POST").copy(
+                body = PluginNetworkBody.FormUrlEncoded(listOf("label" to "交大 +&=", "empty" to "")),
+            ))
+            val sent = server.takeRequest()
+            assertEquals("application/x-www-form-urlencoded", sent.getHeader("Content-Type"))
+            assertEquals("label=%E4%BA%A4%E5%A4%A7%20%2B%26%3D&empty=", sent.body.readUtf8())
+        }
+    }
+
+    @Test
+    fun cookieV2IsOptInPublisherIsolatedAndClearedOnStop() = runBlocking {
+        MockWebServer().use { server ->
+            val origin = testOrigin(server, "cookie.public.test")
+            val base = service(origin)
+            val service = base.copy(grantedCapabilities = base.grantedCapabilities + "network.request@2")
+            val provider = testProvider()
+            repeat(6) {
+                server.enqueue(MockResponse().setHeader("Content-Type", "text/plain").setBody("ok").apply {
+                    if (it == 0) setHeader("Set-Cookie", "session=fixture; Path=/")
+                })
+            }
+            fun cookieRequest() = request("$origin/data").copy(capability = "network.request@2", includeCookies = true)
+            provider.execute(service, cookieRequest())
+            assertEquals(null, server.takeRequest().getHeader("Cookie"))
+            provider.execute(service, cookieRequest())
+            assertEquals("session=fixture", server.takeRequest().getHeader("Cookie"))
+            provider.execute(service, request("$origin/data"))
+            assertEquals(null, server.takeRequest().getHeader("Cookie"))
+            provider.execute(service, cookieRequest().copy(includeCookies = false))
+            assertEquals(null, server.takeRequest().getHeader("Cookie"))
+            provider.execute(service.copy(publisherSubjectId = "publisher:other"), cookieRequest())
+            assertEquals(null, server.takeRequest().getHeader("Cookie"))
+            provider.clearSessions(service.publisherSubjectId, service.serviceId)
+            provider.execute(service, cookieRequest())
+            assertEquals(null, server.takeRequest().getHeader("Cookie"))
+        }
+    }
+
+    @Test
     fun dnsPolicyRejectsIpv6UniqueLocalAndCarrierGradePrivateTargets() {
         assertTrue(isForbiddenPluginAddress(InetAddress.getByName("fd00::1")))
         assertTrue(isForbiddenPluginAddress(InetAddress.getByName("100.64.0.1")))

@@ -14,6 +14,7 @@ import cn.edu.bjtu.mis.data.repository.TodoMutationException
 import cn.edu.bjtu.mis.data.security.SecureCookieStore
 import cn.edu.bjtu.mis.model.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
@@ -83,11 +84,16 @@ class NativeCampusToolsDeviceTest {
             val todo = modules.userTodos().first { it.id == id }
             container.todoReminders.set(id, todo.updatedAt, System.currentTimeMillis() + 3_000)
             withTimeout(45_000) {
+                // Android can expose notify() before the worker commits its final DataStore state.
+                container.todoReminders.store.records.first { it[id]?.state == "delivered" }
                 while (manager.activeNotifications.none { it.tag == "native-todo-reminder-$id" }) delay(250)
             }
             assertEquals("delivered", container.todoReminders.store.read().getValue(id).state)
             modules.setUserTodoDone(id, true)
             assertFalse(container.todoReminders.store.read().containsKey(id))
+            withTimeout(5_000) {
+                while (manager.activeNotifications.any { it.tag == "native-todo-reminder-$id" }) delay(50)
+            }
             assertTrue(manager.activeNotifications.none { it.tag == "native-todo-reminder-$id" })
         } finally {
             modules.deleteUserTodo(id)
