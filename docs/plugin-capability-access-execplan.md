@@ -44,6 +44,16 @@
 
 ## 最终验证与故障记录
 
+### PR #5 CI 修复与合并计划（2026-11-05）
+
+- 用户授权：修复所有失败项，最新 head 全部 CI 通过后合并至 dev。开始时 worktree 干净，head 为 3f815e26c08304976b21263e87c3e05960612cf8。
+- 初始 CI：run 42004327732 的 5 项检查中 4 项通过（含 API 26 与 PostgreSQL 集成），仅 API 35 失败。34 个设备测试中只有 NativeCampusToolsDeviceTest.realWorkManagerNotificationIsDeliveredAndCompletionRevokesIt 失败：expected delivered，actual delivering。
+- 原因：TodoReminders.deliver 先持久化 delivering，再调用系统 notify，最后持久化 delivered。设备测试仅等待通知可见便断言最终状态，存在合法的异步窗口。该问题属于既有测试时序竞态，与插件授权实现无关。
+- 修改范围：只修改该设备测试，使用现有 DataStore Flow 在同一 45 秒 deadline 内等待 delivered 与通知可见；完成待办后也有界等待系统通知撤销。保留最终状态、记录删除和通知撤销断言，不修改生产投递顺序、权限或确认边界。
+- 验证与合并：编译 instrumentation；有可用设备时运行目标测试；推送后等待最新 SHA 的全部 CI 成功，核对 PR base=dev、head 未变，再按 expected_head_sha 合并。不得忽略、跳过或降低失败检查。
+- 回滚：只回退本次测试同步与记录变更，无生产数据或数据库迁移影响。动态 CI 及合并结果以 GitHub 为准。
+- 本地验证：`:app:assembleDebugAndroidTest -x :app:buildOpenWebUi -x :app:syncOpenWebUiAssets -PtargetAbis=x86_64` 通过（复用未变更的既有前端资产）；API 32 设备通过 ADB 连续运行目标 WorkManager 提醒测试 3 次，全部 `OK (1 test)`。`git diff --check` 通过，仅测试与本记录发生改动。推送后的完整 CI 为合并门槛。
+
 - Android `test`：Debug 与 Release 各 548 tests，0 failures/errors/skips；`:app:compileDebugAndroidTestKotlin` 和 `assembleDebug -PtargetAbis=x86_64` 通过。
 - API 32 设备：Gradle connected runner 遭遇 No connected devices / Connection reset / Connection refused（环境传输故障，非测试通过）。改用同一 APK 的 `adb -s emulator-5556 shell am instrument -w -r -e class cn.edu.bjtu.mis.data.agent.PluginBackgroundTaskDeviceTest cn.edu.bjtu.mis.debug.test/androidx.test.runner.AndroidJUnitRunner`，结果 `OK (1 test)`。覆盖导入确认/通知、native tick 前台优先、后台取消、重放不恢复、重新 schedule 和撤销通知清理。
 - 本机 API 35 AVD 配置的 system image 缺失，未能启动；API 26/35 交现有阻塞 instrumentation CI。无 TEST_DATABASE_URL，2 个真实 PostgreSQL 集成测试跳过，交现有 CI。
