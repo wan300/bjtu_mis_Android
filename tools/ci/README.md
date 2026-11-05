@@ -36,6 +36,8 @@ Google APIs 26 镜像自带 Chrome 69，会跳过缺少 document-start/message-l
 
 APK 来源固定为 `android.googlesource.com/platform/external/chromium-webview` 的 `android-15.0.0_r1/prebuilt/x86_64/webview.apk`，SHA-256 为 `b76f0b24f2f3f90dbbc7c23007721428b74eb0b2b969dc8315b5a9dc98469c8f`。下载拒绝重定向并校验摘要，缓存命中仍重新校验。制品与签名输出不进入仓库。
 
+大型 APK 通过官方 Git 仓库 partial clone/sparse checkout 获取，固定 tag 同时校验 commit `479929d2f7c4e3484903132afa864b1f68dd2705` 和 APK 摘要，避免 Gitiles 大型 Base64 请求的 503。Git 传输关闭重定向并有界重试；小型公开证书 HTTPS 获取仅对临时网络错误重试。摘要、来源 commit 和签名错误均停止。API 26 的 userdata 分区为 4 GiB，用于测试 APK 安装/解压，插件配额保持不变。
+
 该预编译包使用 Chromium 构建证书，而 AOSP emulator 的系统包按公开 AOSP development testkey 签名。脚本从同一官方固定 tag 获取并核验公开 testkey fixture，使用 Android build-tools 在临时目录重新签名并再次验证证书。测试材料的摘要固定在脚本中，既不读取也不修改 App release/debug 签名配置。无需 ADB root、系统分区修改或签名检查绕过。
 
 安装脚本要求恰好一个已连接 emulator，检查 qemu、API 26、userdebug/eng 与框架登记 provider，使用显式 serial 安装，选择后核对实际包名/版本。错误摘要、错误环境、错误签名、选择失败均停止，不能继续执行后伪报通过。

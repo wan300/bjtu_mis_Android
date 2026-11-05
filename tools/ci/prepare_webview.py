@@ -6,8 +6,11 @@ import http.client
 import os
 from pathlib import Path
 import re
+import ssl
 import subprocess
 import tempfile
+import time
+import urllib.error
 import urllib.request
 
 PACKAGE = 'com.android.webview'
@@ -15,6 +18,7 @@ VERSION = '124.0.6367.219'
 TEST_CERTIFICATE = 'a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc'
 AOSP = 'https://android.googlesource.com/platform/'
 TAG = '/+/refs/tags/android-15.0.0_r1/'
+WEBVIEW_COMMIT = '479929d2f7c4e3484903132afa864b1f68dd2705'
 # Public AOSP development fixtures, never production signing material.
 RESOURCES = {
     'webview.apk': (
@@ -47,6 +51,62 @@ def decode_resource(encoded, output, name):
     verify(output, name)
 
 
+def read_encoded(opener, url, limit):
+    for attempt in range(3):
+        try:
+            encoded = bytearray()
+            with opener.open(url, timeout=90) as response:
+                while True:
+                    try:
+                        chunk = response.read(1024 * 1024)
+                    except http.client.IncompleteRead as error:
+                        encoded.extend(error.partial)
+                        break  # Full pinned digest validation remains mandatory.
+                    if not chunk:
+                        break
+                    encoded.extend(chunk)
+                    if len(encoded) > limit:
+                        raise ValueError('Oversized CI fixture')
+            if len(encoded) > limit:
+                raise ValueError('Oversized CI fixture')
+            return encoded
+        except urllib.error.HTTPError as error:
+            if error.code not in (408, 429, 500, 502, 503, 504) or attempt == 2:
+                raise
+        except urllib.error.URLError as error:
+            if isinstance(error.reason, ssl.SSLError) or attempt == 2:
+                raise
+        except TimeoutError:
+            if attempt == 2:
+                raise
+        time.sleep(2 ** attempt)
+    raise RuntimeError('CI fixture download attempts exhausted')
+
+
+def fetch_apk_git(output):
+    # Gitiles' large Base64 endpoint can return 503. Fetch only the pinned blob via Git.
+    for attempt in range(2):
+        with tempfile.TemporaryDirectory(prefix='webview-git-', dir=output.parent) as temp:
+            repository = Path(temp) / 'source'
+            try:
+                run(['git', '-c', 'http.followRedirects=false', 'clone', '--filter=blob:none',
+                     '--depth=1', '--sparse', '--single-branch', '--branch', 'android-15.0.0_r1',
+                     AOSP + 'external/chromium-webview', str(repository)], timeout=300)
+                if run(['git', '-C', str(repository), 'rev-parse', 'HEAD']) != WEBVIEW_COMMIT:
+                    raise ValueError('Unexpected AOSP WebView source commit')
+                run(['git', '-C', str(repository), '-c', 'http.followRedirects=false',
+                     'sparse-checkout', 'set', 'prebuilt/x86_64'], timeout=300)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                if attempt == 1:
+                    raise
+                time.sleep(3)
+                continue
+            source = repository / 'prebuilt/x86_64/webview.apk'
+            verify(source, 'webview.apk')
+            source.replace(output)
+            return
+
+
 def fetch(cache):
     cache.mkdir(parents=True, exist_ok=True)
     opener = urllib.request.build_opener(NoRedirect)
@@ -57,29 +117,17 @@ def fetch(cache):
             continue
         # Interrupted downloads and invalid bytes can never become cache hits.
         with tempfile.TemporaryDirectory(prefix='webview-download-', dir=cache) as temp:
-            encoded = bytearray()
-            with opener.open(url, timeout=90) as response:
-                while True:
-                    try:
-                        chunk = response.read(1024 * 1024)
-                    except http.client.IncompleteRead as error:
-                        encoded.extend(error.partial)
-                        break  # Accept only if the full pinned digest still matches below.
-                    if not chunk:
-                        break
-                    encoded.extend(chunk)
-                    if len(encoded) > limit:
-                        raise ValueError(f'Oversized CI fixture {name}')
-            if len(encoded) > limit:
-                raise ValueError(f'Oversized CI fixture {name}')
             output = Path(temp) / name
-            decode_resource(encoded, output, name)
+            if name == 'webview.apk':
+                fetch_apk_git(output)
+            else:
+                decode_resource(read_encoded(opener, url, limit), output, name)
             output.replace(destination)
     print('Pinned AOSP WebView and public development certificate verified.')
 
 
-def run(arguments):
-    return subprocess.run(arguments, check=True, capture_output=True, text=True).stdout.strip()
+def run(arguments, *, timeout=120):
+    return subprocess.run(arguments, check=True, capture_output=True, text=True, timeout=timeout).stdout.strip()
 
 
 def apksigner():

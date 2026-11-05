@@ -2,10 +2,11 @@ import base64
 import binascii
 import hashlib
 import importlib.util
+import io
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location('prepare_webview', Path(__file__).resolve().parents[1] / 'prepare_webview.py')
 webview = importlib.util.module_from_spec(spec)
@@ -105,6 +106,63 @@ class WebViewProvisioningTests(unittest.TestCase):
     def test_redirects_are_rejected(self):
         with self.assertRaises(ValueError):
             webview.NoRedirect().redirect_request(None, None, 302, '', {}, 'http://example.invalid')
+
+    def test_http_retries_only_transient_errors(self):
+        opener = Mock()
+        opener.open.side_effect = [webview.urllib.error.HTTPError('https://example.invalid', 503, '', {}, None), io.BytesIO(b'YWJj')]
+        with patch.object(webview.time, 'sleep') as sleep:
+            self.assertEqual(webview.read_encoded(opener, 'https://example.invalid', 100), b'YWJj')
+            sleep.assert_called_once()
+        for error in [webview.urllib.error.HTTPError('https://example.invalid', 403, '', {}, None),
+                      webview.urllib.error.URLError(webview.ssl.SSLCertVerificationError('bad certificate')),
+                      ValueError('redirect forbidden')]:
+            opener = Mock()
+            opener.open.side_effect = error
+            with patch.object(webview.time, 'sleep') as sleep, self.assertRaises(type(error)):
+                webview.read_encoded(opener, 'https://example.invalid', 100)
+            sleep.assert_not_called()
+            self.assertEqual(opener.open.call_count, 1)
+
+    def test_http_retry_budget_and_size_limit_are_enforced(self):
+        opener = Mock()
+        opener.open.side_effect = webview.urllib.error.HTTPError('https://example.invalid', 503, '', {}, None)
+        with patch.object(webview.time, 'sleep'), self.assertRaises(webview.urllib.error.HTTPError):
+            webview.read_encoded(opener, 'https://example.invalid', 100)
+        self.assertEqual(opener.open.call_count, 3)
+        opener.open.side_effect = None
+        opener.open.return_value = io.BytesIO(b'oversized')
+        with self.assertRaises(ValueError):
+            webview.read_encoded(opener, 'https://example.invalid', 2)
+
+    def git_runner(self, commit=None, content=None):
+        calls = []
+        def run(args, **kwargs):
+            calls.append(args)
+            if 'clone' in args:
+                provider = Path(args[-1]) / 'prebuilt/x86_64/webview.apk'
+                provider.parent.mkdir(parents=True)
+                provider.write_bytes(content if content is not None else (self.cache / 'webview.apk').read_bytes())
+            return (commit or webview.WEBVIEW_COMMIT) if 'rev-parse' in args else ''
+        return run, calls
+
+    def test_git_checkout_requires_pinned_commit_and_digest(self):
+        output = self.cache / 'fetched.apk'
+        runner, calls = self.git_runner()
+        with patch.object(webview, 'run', side_effect=runner):
+            webview.fetch_apk_git(output)
+        self.assertEqual(output.read_bytes(), (self.cache / 'webview.apk').read_bytes())
+        self.assertTrue(all('http.followRedirects=false' in args for args in calls if 'rev-parse' not in args))
+        for options in [{'commit': 'wrong'}, {'content': b'wrong artifact'}]:
+            runner, _ = self.git_runner(**options)
+            with patch.object(webview, 'run', side_effect=runner), self.assertRaises(ValueError):
+                webview.fetch_apk_git(self.cache / 'rejected.apk')
+            self.assertFalse((self.cache / 'rejected.apk').exists())
+
+    def test_git_transport_has_a_bounded_retry_budget(self):
+        with patch.object(webview, 'run', side_effect=webview.subprocess.CalledProcessError(1, ['git'])) as runner, \
+                patch.object(webview.time, 'sleep'), self.assertRaises(webview.subprocess.CalledProcessError):
+            webview.fetch_apk_git(self.cache / 'rejected.apk')
+        self.assertEqual(runner.call_count, 2)
 
 
 if __name__ == '__main__':
