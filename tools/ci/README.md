@@ -26,7 +26,7 @@ python tools/ci/check_instrumentation.py android/app/build/outputs/androidTest-r
 
 检查从当前 WebView、Room migration、会话保活和插件自启测试源码发现测试方法，再核对 JUnit XML。缺报告、缺用例、失败或跳过必需用例均失败；仅 ArrayBuffer 专用测试可因平台能力不足跳过，Base64URL 兼容传输与基础安全桥接测试必须实际通过。
 
-API 26/35 矩阵仍执行全部 instrumentation。测试设备必须安装支持 `DOCUMENT_START_SCRIPT` 与 `WEB_MESSAGE_LISTENER` 的 WebView，API 级别本身不能证明支持。CI 在测试前输出 `dumpsys webviewupdate` 便于定位；若 SDK 镜像自带版本过旧，必须升级测试 provider，不能放宽 XML 门禁。已有本地 `tools/run-webview-beta-instrumentation.ps1` 可使用经审查、与系统兼容的 APK；不从第三方镜像自动下载可执行 APK。**TODO: confirm** 首次远端 API 26/35 运行的 provider 能力和结果，本机验证不替代远端结果。
+API 26/35 矩阵仍执行全部 instrumentation。测试设备必须安装支持 `DOCUMENT_START_SCRIPT` 与 `WEB_MESSAGE_LISTENER` 的 WebView，API 级别本身不能证明支持。CI 在测试前输出 `dumpsys webviewupdate` 便于定位；若 SDK 镜像自带版本过旧，必须升级测试 provider，不能放宽 XML 门禁。已有本地 `tools/run-webview-beta-instrumentation.ps1` 可使用经审查、与系统兼容的 APK；不从第三方镜像自动下载可执行 APK。远端运行结果以 PR 最新提交的 Actions 报告和 XML 门禁为准，本机验证不替代远端结果。
 
 Android 前端依赖挂在 `merge*Assets`，纯 JVM 测试和仅 Kotlin 编译不触发 npm/Pyodide/Vite；实际 APK 打包和设备测试仍必须构建并同步完整前端。可用 `gradlew test :app:compileDebugAndroidTestKotlin --dry-run` 与 `gradlew assembleDebug --dry-run` 分别核对任务图。
 
@@ -38,9 +38,11 @@ APK 来源固定为 `android.googlesource.com/platform/external/chromium-webview
 
 大型 APK 通过官方 Git 仓库 partial clone/sparse checkout 获取，固定 tag 同时校验 commit `479929d2f7c4e3484903132afa864b1f68dd2705` 和 APK 摘要，避免 Gitiles 大型 Base64 请求的 503。Git 传输关闭重定向并有界重试；小型公开证书 HTTPS 获取仅对临时网络错误重试。摘要、来源 commit 和签名错误均停止。API 26 的 userdata 分区为 4 GiB，用于测试 APK 安装/解压，插件配额保持不变。
 
-该预编译包使用 Chromium 构建证书，而 AOSP emulator 的系统包按公开 AOSP development testkey 签名。脚本从同一官方固定 tag 获取并核验公开 testkey fixture，使用 Android build-tools 在临时目录重新签名并再次验证证书。测试材料的摘要固定在脚本中，既不读取也不修改 App release/debug 签名配置。无需 ADB root、系统分区修改或签名检查绕过。
+官方 API 26 default 镜像预装 `com.android.webview`，框架却只登记 Google/Chrome 包名。脚本核验该官方镜像 `framework-res.apk` 的固定 SHA-256（`63dbee0f89fd1ed6a0ff123a495d53c5c9ce47cec8f47ca082065d567ac6f0e9`），然后仅将临时 APK Manifest 的根包名和四个 ContentProvider authority 字符串调整为框架已登记的 `com.google.android.apps.chrome`，这是 [Chromium 文档推荐的调试包名](https://chromium.googlesource.com/chromium/src/+/main/android_webview/docs/build-instructions.md)。引擎代码、native 库、资源、Manifest 权限及 WebViewLibrary 元数据保持原样；不修改框架白名单或系统分区。
 
-安装脚本要求恰好一个已连接 emulator，检查 qemu、API 26、userdebug/eng 与框架登记 provider，使用显式 serial 安装，选择后核对实际包名/版本。错误摘要、错误环境、错误签名、选择失败均停止，不能继续执行后伪报通过。
+临时 APK 使用 SDK zipalign 对齐，再使用同一官方固定 tag 的公开 AOSP development testkey 签名并验证证书；build-tools 36/37 的证书输出格式均支持，仍要求每个证书摘要匹配固定值。测试材料的摘要固定在脚本中，既不读取也不修改 App release/debug 签名配置。无需 ADB root、系统分区修改或签名检查绕过。
+
+安装脚本默认要求恰好一个已连接 emulator，本地可通过 `--serial emulator-NNNN` 选择已连接实例；检查 qemu、API 26、userdebug/eng 与固定框架摘要，使用显式 serial 安装，选择后核对实际包名/版本。物理设备、错误摘要、错误环境、错误签名、选择失败均停止，不能继续执行后伪报通过。
 
 ## 契约与换行
 
