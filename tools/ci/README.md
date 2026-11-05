@@ -30,6 +30,16 @@ API 26/35 矩阵仍执行全部 instrumentation。测试设备必须安装支持
 
 Android 前端依赖挂在 `merge*Assets`，纯 JVM 测试和仅 Kotlin 编译不触发 npm/Pyodide/Vite；实际 APK 打包和设备测试仍必须构建并同步完整前端。可用 `gradlew test :app:compileDebugAndroidTestKotlin --dry-run` 与 `gradlew assembleDebug --dry-run` 分别核对任务图。
 
+### API 26 的固定测试 provider
+
+Google APIs 26 镜像自带 Chrome 69，会跳过缺少 document-start/message-listener 支持的测试。API 26 CI 因此使用同 API/ABI 的 AOSP default 镜像，并通过 `prepare_webview.py` 安装官方 AOSP WebView 124.0.6367.219（minSdk 26）；API 35 保持 Google APIs 镜像。安全测试和无跳过门禁保持启用。
+
+APK 来源固定为 `android.googlesource.com/platform/external/chromium-webview` 的 `android-15.0.0_r1/prebuilt/x86_64/webview.apk`，SHA-256 为 `b76f0b24f2f3f90dbbc7c23007721428b74eb0b2b969dc8315b5a9dc98469c8f`。下载拒绝重定向并校验摘要，缓存命中仍重新校验。制品与签名输出不进入仓库。
+
+该预编译包使用 Chromium 构建证书，而 AOSP emulator 的系统包按公开 AOSP development testkey 签名。脚本从同一官方固定 tag 获取并核验公开 testkey fixture，使用 Android build-tools 在临时目录重新签名并再次验证证书。测试材料的摘要固定在脚本中，既不读取也不修改 App release/debug 签名配置。无需 ADB root、系统分区修改或签名检查绕过。
+
+安装脚本要求恰好一个已连接 emulator，检查 qemu、API 26、userdebug/eng 与框架登记 provider，使用显式 serial 安装，选择后核对实际包名/版本。错误摘要、错误环境、错误签名、选择失败均停止，不能继续执行后伪报通过。
+
 ## 契约与换行
 
 生成物使用 `.gitattributes` 固定 LF；生成器只容忍已有 CRLF checkout，空白、内容、缺失文件等漂移继续失败。Registry 在生成前通过 draft 2020-12 schema 和原有语义不变量验证。Ajv 是 `plugin-tooling` 开发依赖，不进入插件或 Android runtime。
