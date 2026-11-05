@@ -60,6 +60,9 @@ class ThirdPartyServiceApiRegistry(
     private val pluginSessionKeepAliveProvider: PluginCapabilityProvider = LambdaPluginCapabilityProvider(
         setOf("android.session.keepAlive@1"),
     ) { throw PluginRuntimeException("capability_unavailable", "Session keep-alive unavailable") },
+    private val pluginBackgroundTaskProvider: PluginCapabilityProvider = LambdaPluginCapabilityProvider(
+        setOf("android.background.task@1"),
+    ) { throw PluginRuntimeException("capability_unavailable", "Background tasks unavailable") },
     providerOverrides: List<PluginCapabilityProvider> = emptyList(),
 ) {
     private val capabilityProviders = PluginCapabilityProviderRegistry(
@@ -89,7 +92,7 @@ class ThirdPartyServiceApiRegistry(
                 ::executeCampusCapability,
             ),
             LambdaPluginCapabilityProvider(
-                setOf("network.request@1"),
+                setOf("network.request@1", "network.request@2"),
                 ::executeNetworkCapability,
             ),
             LambdaPluginCapabilityProvider(
@@ -107,6 +110,7 @@ class ThirdPartyServiceApiRegistry(
             androidSystemProvider,
             androidNativeProvider,
             pluginSessionKeepAliveProvider,
+            pluginBackgroundTaskProvider,
         ),
         overrides = providerOverrides,
     )
@@ -358,7 +362,7 @@ class ThirdPartyServiceApiRegistry(
     }
 
     private suspend fun executeNetworkCapability(call: PluginCapabilityCall): JsonElement =
-        executeNetwork(call.service, call.params, call.eventSink, call.requestId)
+        executeNetwork(call.service, call.params, call.eventSink, call.requestId, call.capability)
 
     private suspend fun executeStorageCapability(call: PluginCapabilityCall): JsonElement =
         when (call.capability) {
@@ -470,6 +474,7 @@ class ThirdPartyServiceApiRegistry(
         params: JsonObject,
         eventSink: (PluginRuntimeEvent) -> Unit,
         requestId: String,
+        capability: String = "network.request@1",
     ): JsonElement {
         val provider = networkProvider
             ?: throw PluginRuntimeException(
@@ -485,11 +490,13 @@ class ThirdPartyServiceApiRegistry(
                 .orEmpty(),
             body = parseNetworkBody(params),
             timeoutMs = params.long("timeoutMs") ?: PLUGIN_NETWORK_DEFAULT_TIMEOUT_MS,
+            capability = capability,
+            includeCookies = params.string("credentials") == "include",
         )
         val response = provider.execute(service, request) { progress ->
             eventSink(
                 PluginRuntimeEvent(
-                    capability = "network.request@1",
+                    capability = capability,
                     event = "progress",
                     requestId = request.requestId,
                     data = buildJsonObject {
@@ -943,6 +950,15 @@ class ThirdPartyServiceApiRegistry(
         return when (params.string("bodyType") ?: "json") {
             "json" -> PluginNetworkBody.Json(body.toString())
             "text" -> PluginNetworkBody.Text(body.jsonPrimitive.content)
+            "formUrlEncoded" -> {
+                val fields = body as? JsonObject
+                    ?: throw IllegalArgumentException("formUrlEncoded body must be an object of strings")
+                PluginNetworkBody.FormUrlEncoded(fields.map { (name, value) ->
+                    val text = (value as? JsonPrimitive)?.takeIf { it.isString }?.content
+                        ?: throw IllegalArgumentException("formUrlEncoded fields must be strings")
+                    name to text
+                })
+            }
             "blob" -> {
                 val handle = when (body) {
                     is JsonPrimitive -> body.content
@@ -1074,6 +1090,7 @@ class ThirdPartyServiceApiRegistry(
 }
 
 private val PERSISTENT_ANDROID_COMMAND_CAPABILITIES = setOf(
+    "android.background.task@1",
     "android.session.keepAlive@1",
     "android.accessibility.actions@1",
     "android.files.save@1",

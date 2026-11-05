@@ -18,6 +18,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SessionManagerRecoveryTest {
+    @Test fun logoutRunsHostCleanupAndClearsCredentialsEvenWhenCleanupFails() {
+        val cookies = MemoryCookieStore("[]")
+        val credentials = MemoryCredentialStore(LoginCredentials("fixture-user", "fixture-password"))
+        val jar = AppCookieJar()
+        var invoked = false
+        val manager = SessionManager(cookies, credentials, jar, BjtuHttpClient(jar),
+            FakeCaptchaSolver { CaptchaSolveResult(expression = "1+2=", answer = "3") },
+            onLogout = { invoked = true; throw IllegalStateException("Synthetic cleanup failure") })
+        org.junit.Assert.assertThrows(IllegalStateException::class.java) { manager.logout() }
+        assertTrue(invoked)
+        assertEquals(null, cookies.load())
+        assertEquals(null, credentials.load())
+    }
+
     @Test
     fun recoverSessionUsesSavedCredentialsAndCaptchaWhenCookieExpired() = runBlocking {
         MockWebServer().use { server ->

@@ -92,7 +92,7 @@ class PluginAutomationSupervisor(
     fun onAccessibilityDisconnected() {
         scope.launch {
             active.keys.toList().forEach { identity ->
-                if (identity !in autoStartOwners && identity !in PluginSessionKeepAlive.owners() &&
+                if (identity !in autoStartOwners && identity !in PluginSessionKeepAlive.owners() && identity !in PluginBackgroundTasks.owners() &&
                     automationStore.list().none {
                         it.publisherSubjectId == identity.publisherSubjectId && it.serviceId == identity.serviceId &&
                             it.capability != "android.accessibility.events@1"
@@ -117,6 +117,8 @@ class PluginAutomationSupervisor(
         autoStartSuppressed = true
         autoStartOwners.clear()
         active.keys.toList().forEach(::stopService)
+        PluginNetworkSessions.provider?.clearAllSessions()
+        PluginBackgroundTasks.stopAll()
         PluginSessionKeepAlive.stopAll()
         PluginAutoStartForegroundService.stop(context)
         mutableAutoStartStatus.value = "已停止；重新开启开关后可自启"
@@ -132,8 +134,8 @@ class PluginAutomationSupervisor(
     fun releaseKeepAliveReason(publisher: String, plugin: String, force: Boolean = false) {
         scope.launch {
             val identity = PluginAutomationIdentity(publisher, plugin)
-            if (identity !in autoStartOwners && (force || identity !in PluginSessionKeepAlive.owners()) &&
-                automationStore.list().none { it.publisherSubjectId == publisher && it.serviceId == plugin }) {
+            if (identity !in autoStartOwners && (force || identity !in PluginSessionKeepAlive.owners()) && identity !in PluginBackgroundTasks.owners() &&
+                automationStore.list().none { it.publisherSubjectId == publisher && it.serviceId == plugin && it.task == null }) {
                 releaseRuntime(identity)
             }
         }
@@ -222,13 +224,15 @@ class PluginAutomationSupervisor(
         val records = automationStore.list().filter {
             it.publisherSubjectId == identity.publisherSubjectId && it.serviceId == identity.serviceId
         }
-        val usable = records.any { it.capability in declared && it.capability in service.grantedCapabilities &&
+        val hasTasks = identity in PluginBackgroundTasks.owners() &&
+            PLUGIN_BACKGROUND_TASK_CAPABILITY in declared && PLUGIN_BACKGROUND_TASK_CAPABILITY in service.grantedCapabilities
+        val usable = records.filter { it.task == null }.any { it.capability in declared && it.capability in service.grantedCapabilities &&
             (it.capability != "android.accessibility.events@1" || AndroidAccessibilityController.isConnected()) }
         if (!service.canRun) {
             automationStore.removeService(identity.publisherSubjectId, identity.serviceId)
             return
         }
-        if (!usable && !hasKeepAlive && !hasAutoStart) return
+        if (!usable && !hasKeepAlive && !hasAutoStart && !hasTasks) return
         if (!launchGate.isCurrent(token)) return
         if (active.containsKey(identity)) {
             if (hasAutoStart) autoStartOwners += identity

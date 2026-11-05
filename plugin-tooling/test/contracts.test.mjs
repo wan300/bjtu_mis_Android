@@ -44,7 +44,7 @@ test('contract registry has unique capability routes and command invariants', as
   for (const id of androidCapabilityIds) {
     const capability = registry.capabilities.find((item) => item.id === id);
     assert.equal(capability.stability, 'beta', id);
-    assert.equal(capability.runtimeFloor, 2, id);
+    assert.equal(capability.runtimeFloor, id === 'android.network.status@1' ? 5 : 2, id);
   }
   const androidActions = registry.capabilities.find(
     (capability) => capability.id === 'android.accessibility.actions@1'

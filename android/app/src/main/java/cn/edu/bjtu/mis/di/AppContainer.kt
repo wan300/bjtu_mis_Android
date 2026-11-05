@@ -126,7 +126,10 @@ class AppContainer(context: Context) {
         currentVersionProvider = { appContext.installedVersionName() },
     )
     val appUpdatePreferenceStore = AppUpdatePreferenceStore(appContext)
-    val sessionManager = SessionManager(cookieStore, credentialStore, cookieJar, httpClient, captchaSolver)
+    val sessionManager = SessionManager(cookieStore, credentialStore, cookieJar, httpClient, captchaSolver,
+        onLogout = {
+            try { pluginBackgroundTaskProvider.stopAll() } finally { thirdPartyNetworkProvider.clearAllSessions() }
+        })
     val sessionRepository = SessionRepository(sessionManager)
     private val todoMutex = Mutex()
     val syncRepository = SyncRepository(database.dao(), sessionManager,
@@ -294,6 +297,9 @@ class AppContainer(context: Context) {
             )
         }
     }
+    val pluginBackgroundTaskProvider by lazy {
+        cn.edu.bjtu.mis.data.thirdparty.PluginBackgroundTaskProvider(appContext, thirdPartyServiceRepository, pluginAutomationStore)
+    }
     val pluginSessionKeepAliveProvider by lazy {
         PluginSessionKeepAliveProvider(appContext, thirdPartyServiceRepository)
     }
@@ -316,8 +322,10 @@ class AppContainer(context: Context) {
                     context = appContext,
                     resourceStore = thirdPartyResourceStore,
                     automationStore = pluginAutomationStore,
+                    networkProvider = thirdPartyNetworkProvider,
                 ),
                 pluginSessionKeepAliveProvider = pluginSessionKeepAliveProvider,
+                pluginBackgroundTaskProvider = pluginBackgroundTaskProvider,
             )
         }
     }
@@ -332,6 +340,8 @@ class AppContainer(context: Context) {
         ).also {
             AndroidNativeEventController.configureSupervisor(it)
             pluginSessionKeepAliveProvider.supervisor = it
+            pluginBackgroundTaskProvider.supervisor = it
+            cn.edu.bjtu.mis.data.thirdparty.PluginNetworkSessions.provider = thirdPartyNetworkProvider
         }
     }
 

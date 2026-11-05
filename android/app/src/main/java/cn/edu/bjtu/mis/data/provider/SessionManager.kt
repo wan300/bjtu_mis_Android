@@ -92,6 +92,7 @@ class SessionManager(
     private val httpClient: BjtuHttpClient,
     private val captchaSolver: CaptchaAnswerSolver,
     private val endpoints: SessionEndpoints = SessionEndpoints(),
+    private val onLogout: () -> Unit = {},
 ) {
     private val mutex = Mutex()
     private val validationMutex = Mutex()
@@ -497,12 +498,14 @@ class SessionManager(
     }
 
     fun logout() {
-        inlineLoginState = null
-        validationCache.clear()
-        VeSessionContextCache.clear()
-        cookieJar.clear()
-        cookieStore.clear()
-        credentialStore.clear()
+        try { onLogout() } finally {
+            inlineLoginState = null
+            validationCache.clear()
+            VeSessionContextCache.clear()
+            cookieJar.clear()
+            cookieStore.clear()
+            credentialStore.clear()
+        }
     }
 
     private suspend fun ensureAaSessionReady(): Pair<Boolean, String?> {

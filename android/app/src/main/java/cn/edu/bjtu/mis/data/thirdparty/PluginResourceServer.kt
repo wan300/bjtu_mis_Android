@@ -242,7 +242,7 @@ class PluginResourceServer(
                 }
             ThirdPartyResourceKind.Cache ->
                 service.grantedCapabilities.any {
-                    it == "cache.resource@1" || it == "network.request@1"
+                    it == "cache.resource@1" || it == "network.request@1" || it == "network.request@2"
                 }
         }
 }

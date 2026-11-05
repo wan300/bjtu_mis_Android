@@ -305,7 +305,7 @@ await bjtu.android.accessibility.actions.performNode({
               <li>动作每分钟最多 120 次。首次或增量授权后免逐次弹窗，但仍要求 idempotency key；回执不保存输入、节点文本或手势轨迹。</li>
               <li><code>packages</code> 不返回 APK 路径、私有数据或图标；<code>settings.open</code> 只允许 <code>android.settings.*</code> 和可选 <code>package:</code> data。</li>
               <li>全局最多 4 个后台 runtime；持续通知提供“全部停止”。删除、禁用、撤销、publisher 变化、声明丢失或复审会立即清理自动化状态。</li>
-              <li><code>network</code>、<code>battery</code> 和 <code>sensors</code> 可持久订阅；每插件最多 16 个，网络/电池最多 60 events/s，传感器最多 20 Hz。设备和网络 API 不提供硬件稳定 ID、SSID、BSSID、MAC 或 IP。</li>
+              <li><code>network</code>、<code>battery</code> 和 <code>sensors</code> 可持久订阅；每插件最多 16 个，网络/电池最多 60 events/s，传感器最多 20 Hz。设备和网络 API 不提供硬件稳定 ID、SSID、BSSID 或 MAC；IP 需显式前台确认调用 <code>getAddresses</code>。</li>
               <li><code>files</code>、<code>media</code>、<code>share</code>、<code>camera</code> 与 <code>biometric</code> 只能从前台页面唤起系统 UI；后台调用返回 <code>foreground_required</code>。文件/媒体只返回隔离 Blob handle，不返回路径或 raw URI。</li>
               <li>定位只允许前台单次读取；录音只能由可见前台 runtime 启动。系统运行时权限、选择器和生物识别弹窗仍由 Android 控制，持久授权不会绕过它们。</li>
             </ul>
@@ -379,7 +379,7 @@ await bjtu.android.accessibility.actions.performNode({
             <p class="eyebrow">Isolated network</p>
             <h2>无宿主会话的公网请求</h2>
             <p>
-              <code>network.request@1</code> 使用无 Cookie、无宿主认证器的独立客户端。
+              <code>network.request@1</code> 使用无 Cookie、无宿主认证器的独立客户端。表单编码支持 <code>bodyType: "formUrlEncoded"</code>。<code>network.request@2</code> 可在独立授权且显式 <code>credentials: "include"</code> 时使用按发布者、插件和精确 origin 隔离的内存 Cookie。
               初始请求、DNS 解析和每次重定向都会重新执行 SSRF 检查，并拒绝
               <code>Host</code>、<code>Cookie</code>、<code>Content-Length</code> 等
               传输层 header。
@@ -567,6 +567,7 @@ Content-Type: application/json
           <section class="docs-section reveal" id="session-keepalive">
             <p class="eyebrow">Session keep-alive</p>
             <h2>插件 MIS 会话保活</h2>
+            <p><code>android.credentials.import@1</code> 支持应用自供结构化登录态的前台确认导入；<code>android.background.task@1</code> 提供原生 schedule/cancel/list/onTick，最长 60 分钟，持续通知可全部停止；<code>android.network.status@1#getAddresses</code> 提供需逐次确认的 IP 查询。OAID/MAC 和 origin 通配尚不支持，详见仓库 docs/third-party-services.md。</p>
             <p><code>android.session.keepAlive@1</code>（beta，runtime 3）支持前台申请/续租、后台查询/释放限时租约，首次或增量授权后生效。每插件最多 2 个租约，创建起最长 60 分钟；持续通知可停止，撤销/更新/删除会清理。不会暴露凭据，也不保证进程永久存活。</p>
           </section>
           <section class="docs-section reveal" id="app-autostart">

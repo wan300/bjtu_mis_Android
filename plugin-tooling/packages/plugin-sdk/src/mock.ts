@@ -76,6 +76,8 @@ export function createMockTransport(initial: MockHostScenario = {}): MockPluginT
     ...initial
   };
   const leases = new Map<string, { leaseId: string; expiresAtMs: number; maxExpiresAtMs: number }>();
+  const tasks = new Map<string, { taskId: string; callbackId: string; intervalMs: number; expiresAtMs: number }>();
+  const taskReceipts = new Map<string, { digest: string; result: unknown }>();
   const receipts = new Map<string, { digest: string; result: unknown }>();
   let reservedMs = 0;
   let sequence = 0;
@@ -184,10 +186,10 @@ export function createMockTransport(initial: MockHostScenario = {}): MockPluginT
           'Mock Android accessibility service is disconnected.'
         );
       }
-      if (request.capability === 'network.request@1' && scenario.network === 'offline') {
+      if (request.capability.startsWith('network.request@') && scenario.network === 'offline') {
         return failure(request.requestId, 'http_error', 'Mock host is offline.', true);
       }
-      if (request.capability === 'network.request@1' && scenario.network === 'timeout') {
+      if (request.capability.startsWith('network.request@') && scenario.network === 'timeout') {
         return failure(request.requestId, 'network_timeout', 'Mock request timed out.', true);
       }
       if (
@@ -203,6 +205,40 @@ export function createMockTransport(initial: MockHostScenario = {}): MockPluginT
       }
       if (scenario.migrationFailure && route === 'runtime.lifecycle@1#ready') {
         return failure(request.requestId, 'migration_failed', 'Mock migration failed.');
+      }
+      if (request.capability === 'android.credentials.import@1') {
+        if (scenario.lifecycle !== 'active') return failure(request.requestId, 'foreground_required', 'Visible plugin required');
+        const params = request.params as Record<string, unknown>;
+        return { protocolVersion: PROTOCOL_VERSION, requestId: request.requestId, ok: true, result: params.credentials };
+      }
+      if (route === 'android.network.status@1#getAddresses') {
+        if (scenario.lifecycle !== 'active') return failure(request.requestId, 'foreground_required', 'Visible plugin required');
+        return { protocolVersion: PROTOCOL_VERSION, requestId: request.requestId, ok: true, result: {} };
+      }
+      if (request.capability === 'android.background.task@1') {
+        const now = Date.now();
+        for (const [id, task] of tasks) if (task.expiresAtMs <= now) tasks.delete(id);
+        const params = request.params as Record<string, unknown>;
+        const success = (result: unknown): PluginResponseV2 => ({ protocolVersion: PROTOCOL_VERSION, requestId: request.requestId, ok: true, result });
+        if (request.method === 'list') return success({ tasks: [...tasks.values()] });
+        const key = String(params.idempotencyKey);
+        const digest = JSON.stringify({ method: request.method, params });
+        const previous = taskReceipts.get(key);
+        if (previous) return previous.digest === digest ? success(previous.result) : failure(request.requestId, 'idempotency_conflict', 'Conflicting request');
+        let result: unknown;
+        if (request.method === 'cancel') result = { cancelled: tasks.delete(String(params.taskId)) };
+        else {
+          if (scenario.lifecycle !== 'active') return failure(request.requestId, 'foreground_required', 'Visible plugin required');
+          const interval = Number(params.intervalMs); const duration = Number(params.maxDurationMs);
+          if (!Number.isInteger(interval) || interval < 1000 || !Number.isInteger(duration) || duration < interval || duration > 3600000) return failure(request.requestId, 'invalid_request', 'Invalid task lifetime');
+          if (tasks.size >= 4 || scenario.quota === 'exceeded') return failure(request.requestId, 'quota_exceeded', 'Task quota exceeded');
+          const task = { taskId: `mock-task-${++sequence}`, callbackId: String(params.callbackId), intervalMs: interval, expiresAtMs: now + duration };
+          tasks.set(task.taskId, task);
+          result = task;
+        }
+        const receipt = { receiptId: `mock-receipt-${++sequence}`, idempotencyKey: key, completedAt: new Date(now).toISOString(), result };
+        taskReceipts.set(key, { digest, result: receipt });
+        return success(receipt);
       }
       if (request.capability === 'android.session.keepAlive@1') {
         const now = Date.now();

@@ -9,6 +9,7 @@ import okhttp3.Call
 import okhttp3.CookieJar
 import okhttp3.Dns
 import okhttp3.FormBody
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -42,6 +43,8 @@ data class PluginNetworkRequest(
     val headers: Map<String, String> = emptyMap(),
     val body: PluginNetworkBody? = null,
     val timeoutMs: Long = PLUGIN_NETWORK_DEFAULT_TIMEOUT_MS,
+    val capability: String = "network.request@1",
+    val includeCookies: Boolean = false,
 )
 
 sealed interface PluginNetworkBody {
@@ -137,14 +140,42 @@ class PluginNetworkProvider private constructor(
     private val pluginSemaphores = ConcurrentHashMap<String, Semaphore>()
     private val originSemaphores = ConcurrentHashMap<String, Semaphore>()
     private val activeCalls = ConcurrentHashMap<String, Call>()
+    private val cookieLock = Any()
+    private val cookieJars = mutableMapOf<ThirdPartyKvNamespace, MutableMap<String, PluginOriginCookieJar>>()
+
+    fun clearSessions(publisher: String, plugin: String) = synchronized(cookieLock) {
+        cookieJars.remove(ThirdPartyKvNamespace(publisher, plugin))?.values?.forEach { it.clear() }
+        activeCalls.filterKeys { it.startsWith("$publisher\u0000$plugin\u0000") }.values.forEach(Call::cancel)
+        Unit
+    }
+
+    fun clearAllSessions() = synchronized(cookieLock) {
+        cookieJars.values.flatMap { it.values }.forEach { it.clear() }
+        cookieJars.clear()
+        activeCalls.values.forEach(Call::cancel)
+    }
+
+    private fun cookieJar(service: ThirdPartyService, url: String): CookieJar = synchronized(cookieLock) {
+        val namespace = namespace(service)
+        val target = url.toHttpUrl()
+        val origin = "${target.scheme}://${target.host}:${target.port}"
+        val jars = cookieJars.getOrPut(namespace) { mutableMapOf() }
+        jars[origin] ?: run {
+            if (jars.size >= 32) throw PluginNetworkException("quota_exceeded", "Too many Cookie origins")
+            PluginOriginCookieJar(origin).also { jars[origin] = it }
+        }
+    }
 
     suspend fun execute(
         service: ThirdPartyService,
         request: PluginNetworkRequest,
         onProgress: (PluginNetworkProgress) -> Unit = {},
     ): PluginNetworkResponse {
-        if ("network.request@1" !in service.grantedCapabilities) {
-            throw PluginNetworkException("permission_denied", "network.request@1 is not granted")
+        if (request.capability !in setOf("network.request@1", "network.request@2") || request.capability !in service.grantedCapabilities) {
+            throw PluginNetworkException("permission_denied", "Network capability is not granted")
+        }
+        if (request.includeCookies && request.capability != "network.request@2") {
+            throw PluginNetworkException("permission_denied", "Cookie sessions require network.request@2")
         }
         validateRequest(request)
         val pluginKey = "${service.publisherSubjectId}\u0000${service.serviceId}"
@@ -226,6 +257,7 @@ class PluginNetworkProvider private constructor(
     ): Response = withContext(Dispatchers.IO) {
         val timeout = request.timeoutMs.coerceIn(1, PLUGIN_NETWORK_MAX_TIMEOUT_MS)
         val callClient = client.newBuilder()
+            .cookieJar(if (request.includeCookies) cookieJar(service, request.url) else CookieJar.NO_COOKIES)
             .callTimeout(timeout, TimeUnit.MILLISECONDS)
             .connectTimeout(timeout, TimeUnit.MILLISECONDS)
             .readTimeout(timeout, TimeUnit.MILLISECONDS)

@@ -134,7 +134,7 @@ export interface NetworkRequest {
   method?: 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   headers?: Record<string, string>;
   body?: unknown;
-  bodyType?: 'json' | 'text' | 'formData' | 'blob';
+  bodyType?: 'json' | 'text' | 'formData' | 'formUrlEncoded' | 'blob';
   timeoutMs?: number;
 }
 
@@ -209,6 +209,7 @@ export interface BjtuPluginSdk {
   };
   readonly network: {
     request(request: NetworkRequest, options?: InvokeOptions): Promise<NetworkResponse>;
+    requestWithCookies(request: CapabilityRequest<'network.request@2#request'>, options?: InvokeOptions): Promise<CapabilityResponse<'network.request@2#request'>>;
   };
   readonly storage: {
     readonly kv: {
@@ -389,11 +390,23 @@ export interface BjtuPluginSdk {
         options?: InvokeOptions
       ): Promise<AndroidSettingsOpenResult>;
     };
+    readonly credentials: {
+      import(request: CapabilityRequest<'android.credentials.import@1#import'>, options?: InvokeOptions): Promise<CapabilityResponse<'android.credentials.import@1#import'>>;
+    };
+    readonly background: {
+      task: {
+        schedule(request: CapabilityRequest<'android.background.task@1#schedule'>, options?: InvokeOptions): Promise<CapabilityResponse<'android.background.task@1#schedule'>>;
+        cancel(request: CapabilityRequest<'android.background.task@1#cancel'>, options?: InvokeOptions): Promise<CapabilityResponse<'android.background.task@1#cancel'>>;
+        list(options?: InvokeOptions): Promise<CapabilityResponse<'android.background.task@1#list'>>;
+        onTick(listener: (data: CapabilityEventData<'android.background.task@1#tick'>, envelope: PluginEventV2) => boolean | void | Promise<boolean | void>): () => void;
+      };
+    };
     readonly device: {
       getInfo(options?: InvokeOptions): Promise<CapabilityResponse<'android.device.info@1#getInfo'>>;
     };
     readonly network: {
       getStatus(options?: InvokeOptions): Promise<AndroidNetworkStatus>;
+      getAddresses(request?: CapabilityRequest<'android.network.status@1#getAddresses'>, options?: InvokeOptions): Promise<CapabilityResponse<'android.network.status@1#getAddresses'>>;
       subscribe(
         request?: CapabilityRequest<'android.network.status@1#subscribe'>,
         options?: InvokeOptions
@@ -675,7 +688,8 @@ export function createBjtuPluginSdk(
     },
     network: {
       request: (request, options) =>
-        invoke('network.request@1#request', request, options)
+        invoke('network.request@1#request', request, options),
+      requestWithCookies: (request, options) => invoke('network.request@2#request', request, options)
     },
     storage: {
       kv: {
@@ -870,11 +884,23 @@ export function createBjtuPluginSdk(
         open: (request, options) =>
           invoke('android.settings.open@1#open', request, options)
       },
+      credentials: {
+        import: (request, options) => invoke('android.credentials.import@1#import', request, options)
+      },
+      background: {
+        task: {
+          schedule: (request, options) => invoke('android.background.task@1#schedule', request, options),
+          cancel: (request, options) => invoke('android.background.task@1#cancel', request, options),
+          list: (options) => invoke('android.background.task@1#list', {}, options),
+          onTick: (listener) => subscribe('android.background.task@1', 'tick', listener)
+        }
+      },
       device: {
         getInfo: (options) => invoke('android.device.info@1#getInfo', {}, options)
       },
       network: {
         getStatus: (options) => invoke('android.network.status@1#getStatus', {}, options),
+        getAddresses: (request = {}, options) => invoke('android.network.status@1#getAddresses', request, options),
         subscribe: (request = {}, options) =>
           invoke('android.network.status@1#subscribe', request, options),
         unsubscribe: (subscriptionId, options) =>
@@ -977,7 +1003,7 @@ function resolveTimeoutMs(
     throw new BjtuPluginError('capability_unavailable', `Unknown capability: ${capability}`);
   }
   const requestTimeout =
-    capability === 'network.request@1' && isObject(params) && typeof params.timeoutMs === 'number'
+    (capability === 'network.request@1' || capability === 'network.request@2') && isObject(params) && typeof params.timeoutMs === 'number'
       ? params.timeoutMs
       : undefined;
   const timeoutMs = override ?? requestTimeout ?? descriptor.timeoutMs;
