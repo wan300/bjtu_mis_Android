@@ -76,7 +76,7 @@ npm run test:e2e
 
 构建说明：
 
-- `assembleDebug` 和 `assembleRelease` 会在 Android `preBuild` 阶段自动构建 `android/open-webui`，并同步到 `android/app/src/main/assets/public`。
+- `assembleDebug` 和 `assembleRelease` 会在 Android 资产合并阶段自动构建 `android/open-webui`，并同步到 `android/app/src/main/assets/public`；纯 JVM 测试和仅 Kotlin 编译不触发前端构建。
 - Open WebUI 构建会使用 `ENABLE_MOBILE_CLIENT=true` 和 `ENABLE_MOBILE_NATIVE_FEATURES=true`。
 - `android/local.properties` 是本机 Android SDK 配置，不应提交。
 - 插件平台生产编排位于 `deploy/docker-compose.plugins.yml`，Dockerfile 位于 `web/platform/Dockerfile`。
@@ -116,6 +116,9 @@ Open WebUI：
 - `npm run typecheck`
 - `npm test`
 - `npm run pack:check`：验证 npm 包和插件 ZIP 可确定性构建。
+- `npm run check:ci`：一次构建后运行契约生成检查、类型、模板、单测与确定性打包。
+- `npm run test:browser`：单独运行真实浏览器 smoke；CI 仍将其作为必需检查。`npm test` 只运行工具链单测。
+- `python -B -m unittest discover -s tools/ci/tests -v`（仓库根目录）：验证 CI 范围选择与 instrumentation 结果门禁。详见 `tools/ci/README.md`。
 
 ## 4. Coding conventions
 

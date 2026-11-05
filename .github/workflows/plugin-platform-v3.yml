@@ -2,6 +2,7 @@ name: Plugin platform v3 baseline
 
 on:
   pull_request:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -11,10 +12,41 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  tooling:
-    name: Contract generation, SDK, CLI and package determinism
+  changes:
+    name: CI scope and validation guards
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tooling: ${{ steps.scope.outputs.tooling }}
+      platform: ${{ steps.scope.outputs.platform }}
+      frontend: ${{ steps.scope.outputs.frontend }}
+      android: ${{ steps.scope.outputs.android }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test CI selection and instrumentation guards
+        run: python3 -B -m unittest discover -s tools/ci/tests -v
+      - name: Test availability monitor
+        run: python3 -B -m unittest discover -s deploy/monitoring/tests -v
+      - name: Select affected modules
+        id: scope
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 tools/ci/classify_changes.py
+
+  tooling-build:
+    name: Contract tooling build and unit checks
+    needs: changes
+    if: needs.changes.outputs.tooling == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -25,18 +57,19 @@ jobs:
       - name: Install tooling dependencies
         working-directory: plugin-tooling
         run: npm ci
-      - name: Reject generated contract drift
+      - name: Check contracts, types, unit tests and determinism with one build
         working-directory: plugin-tooling
-        run: npm run generate:check
-      - name: Typecheck SDK and CLI
-        working-directory: plugin-tooling
-        run: npm run typecheck
-      - name: Run SDK, CLI, Mock and generator tests
-        working-directory: plugin-tooling
-        run: npm test
-      - name: Verify deterministic npm and plugin packages
-        working-directory: plugin-tooling
-        run: npm run pack:check
+        run: npm run check:ci
+      - name: Share compiled tooling with browser smoke
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-tooling-dist
+          path: |
+            plugin-tooling/packages/plugin-sdk/dist
+            plugin-tooling/packages/plugin-cli/dist
+            plugin-tooling/packages/create-bjtu-plugin/dist
+          if-no-files-found: error
+          retention-days: 1
       - name: Verify shared schemas are byte-identical
         run: |
           cmp docs/third-party-service-manifest.schema.json web/assets/schemas/third-party-service-manifest.schema.json
@@ -48,9 +81,60 @@ jobs:
           node tools/third-party-service-lint.cjs third-party-plugins/examples/profile-timetable --source --marketplace
           node tools/third-party-service-lint.cjs third-party-plugins/examples/remote-origin-demo --source --marketplace
 
+  browser-smoke:
+    name: Real browser protocol v2 smoke
+    needs: [changes, tooling-build]
+    if: needs.changes.outputs.tooling == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: plugin-tooling/package-lock.json
+      - run: npm ci
+        working-directory: plugin-tooling
+      - uses: actions/download-artifact@v4
+        with:
+          name: plugin-tooling-dist
+          path: plugin-tooling/packages
+      - name: Verify browser and run smoke
+        working-directory: plugin-tooling
+        env:
+          BJTU_PLUGIN_TEST_BROWSER: /usr/bin/google-chrome
+        run: |
+          "$BJTU_PLUGIN_TEST_BROWSER" --version
+          npm run test:browser:built
+
+  frontend:
+    name: Open WebUI frontend tests
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: android/open-webui/package-lock.json
+      - run: npm ci
+        working-directory: android/open-webui
+      - name: Prepare SvelteKit and run Vitest
+        working-directory: android/open-webui
+        run: |
+          npx svelte-kit sync
+          npm run test:frontend -- --run
+
   platform:
     name: Node 22 platform, schema, integration and e2e
+    needs: changes
+    if: needs.changes.outputs.platform == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -77,12 +161,9 @@ jobs:
       - name: Install platform dependencies
         working-directory: web/platform
         run: npm ci
-      - name: Typecheck
+      - name: Compile once and run unit, PostgreSQL and API e2e tests
         working-directory: web/platform
-        run: npm run typecheck
-      - name: Unit tests
-        working-directory: web/platform
-        run: npm test
+        run: npm run check:ci
       - name: Check production image contract inputs
         run: |
           test -f docs/third-party-service-manifest.schema.json
@@ -100,27 +181,26 @@ jobs:
               throw new Error(result.errors.join("\n") || "contract package limits are invalid");
             }
           '
-      - name: PostgreSQL migration and constraint tests
-        working-directory: web/platform
-        run: npm run test:integration
-      - name: API e2e tests
-        working-directory: web/platform
-        run: npm run test:e2e
   android-jvm:
     name: Android JVM baseline
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: android/open-webui/package-lock.json
       - uses: gradle/actions/setup-gradle@v6
+      - name: Verify Kotlin isolation and APK asset dependencies
+        working-directory: android
+        run: |
+          ./gradlew test :app:compileDebugAndroidTestKotlin :app:compileReleaseKotlin --dry-run --console=plain > "$RUNNER_TEMP/android-compile-tasks.txt"
+          python3 ../tools/ci/check_gradle_tasks.py compile "$RUNNER_TEMP/android-compile-tasks.txt"
+          ./gradlew assembleDebug --dry-run --console=plain > "$RUNNER_TEMP/android-package-tasks.txt"
+          python3 ../tools/ci/check_gradle_tasks.py package "$RUNNER_TEMP/android-package-tasks.txt"
       - name: Run Android JVM tests
         working-directory: android
         run: ./gradlew test
@@ -130,7 +210,10 @@ jobs:
 
   android-instrumentation:
     name: Android WebView instrumentation API ${{ matrix.api-level }}
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -161,7 +244,10 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: cd android && ./gradlew :app:connectedDebugAndroidTest -PtargetAbis=x86_64
+          script: adb shell dumpsys webviewupdate && cd android && ./gradlew :app:connectedDebugAndroidTest -PtargetAbis=x86_64
+      - name: Require security tests to execute and pass
+        if: ${{ always() }}
+        run: python3 tools/ci/check_instrumentation.py android/app/build/outputs/androidTest-results/connected
       - name: Upload Android instrumentation diagnostics
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
@@ -171,3 +257,17 @@ jobs:
             android/app/build/outputs/androidTest-results
             android/app/build/reports/androidTests
           if-no-files-found: ignore
+
+  # Preserve the existing required-check context, including browser smoke failures.
+  tooling:
+    name: Contract generation, SDK, CLI and package determinism
+    needs: [changes, tooling-build, browser-smoke, frontend, platform, android-jvm, android-instrumentation]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Reject failed, cancelled or unexpectedly skipped checks
+        env:
+          CI_JOB_RESULTS: ${{ toJSON(needs) }}
+        run: python3 tools/ci/classify_changes.py --verify-jobs

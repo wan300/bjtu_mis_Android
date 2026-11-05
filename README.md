@@ -109,7 +109,12 @@ npm run generate:check
 npm run typecheck
 npm test
 npm run pack:check
+# 一次构建完成上述检查；真实浏览器 smoke 单独运行
+npm run check:ci
+npm run test:browser
 ```
+
+CI 变更范围选择、WebView 实际执行门禁及本地命令见 [tools/ci/README.md](tools/ci/README.md)。工具链生成物固定 LF，Windows checkout 的 CRLF 不再误报契约漂移。
 
 ## 开源许可
 

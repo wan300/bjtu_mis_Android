@@ -17,7 +17,11 @@
     "migrate": "tsx src/migrate.ts",
     "test": "npm run build --silent && node dist/test/unit/run.js",
     "test:integration": "npm run build --silent && node dist/test/integration/run.js",
-    "test:e2e": "npm run build --silent && node dist/test/e2e/run.js"
+    "test:e2e": "npm run build --silent && node dist/test/e2e/run.js",
+    "test:unit:built": "node dist/test/unit/run.js",
+    "test:integration:built": "node dist/test/integration/run.js",
+    "test:e2e:built": "node dist/test/e2e/run.js",
+    "check:ci": "npm run build && npm run test:unit:built && npm run test:integration:built && npm run test:e2e:built"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

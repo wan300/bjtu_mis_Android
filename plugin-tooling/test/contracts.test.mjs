@@ -3,9 +3,35 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { validateRegistrySchema, matchesGeneratedContent } from '../scripts/registry-validation.mjs';
 
 const toolingRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = path.resolve(toolingRoot, '..');
+
+test('generation tolerates CRLF checkouts without hiding actual drift', () => {
+  assert.equal(matchesGeneratedContent('one\r\ntwo\r\n', 'one\ntwo\n'), true);
+  for (const actual of [null, 'one\ntwo', 'one \ntwo\n', 'one\rthree\n', 'changed\ntwo\n']) {
+    assert.equal(matchesGeneratedContent(actual, 'one\ntwo\n'), false);
+  }
+});
+
+test('Registry schema accepts stabilization and rejects invalid metadata', async () => {
+  const registry = JSON.parse(await readFile(path.join(toolingRoot, 'contracts/capability-contracts.json'), 'utf8'));
+  const stabilized = structuredClone(registry);
+  stabilized.capabilities.find((item) => item.stability === 'beta').stability = 'stable';
+  assert.doesNotThrow(() => validateRegistrySchema(stabilized));
+  for (const [key, value] of [
+    ['stability', 'invalid'], ['runtimeFloor', 1], ['confirmation', 'silent'],
+    ['idempotency', 'optional'], ['timeoutMs', -1], ['optionalOnly', 'true']
+  ]) {
+    const invalid = structuredClone(registry);
+    invalid.capabilities[0][key] = value;
+    assert.throws(() => validateRegistrySchema(invalid), /Invalid capability registry/, key);
+  }
+  const missing = structuredClone(registry);
+  delete missing.capabilities[0].support;
+  assert.throws(() => validateRegistrySchema(missing), /support/);
+});
 
 test('contract registry has unique capability routes and command invariants', async () => {
   const registry = JSON.parse(
@@ -43,7 +69,7 @@ test('contract registry has unique capability routes and command invariants', as
   ];
   for (const id of androidCapabilityIds) {
     const capability = registry.capabilities.find((item) => item.id === id);
-    assert.equal(capability.stability, 'beta', id);
+    assert.ok(['beta', 'stable'].includes(capability.stability), id);
     assert.equal(capability.runtimeFloor, 2, id);
   }
   const androidActions = registry.capabilities.find(
@@ -104,9 +130,12 @@ test('platform package limits are generated from the capability registry', async
     ),
     'utf8'
   );
-  assert.match(generated, /"archiveBytes": 26214400/);
-  assert.match(generated, /"extractedBytes": 52428800/);
-  assert.match(generated, /"files": 1000/);
+  const registry = JSON.parse(await readFile(path.join(toolingRoot, 'contracts/capability-contracts.json'), 'utf8'));
+  const { PACKAGE_LIMITS } = await import('../packages/plugin-sdk/dist/index.js');
+  assert.deepEqual(PACKAGE_LIMITS, registry.packageLimits);
+  for (const [key, value] of Object.entries(registry.packageLimits)) {
+    assert.ok(generated.includes(`${JSON.stringify(key)}: ${value}`), key);
+  }
 });
 
 test('generated manifest schema is compact and mirrors the public copy', async () => {

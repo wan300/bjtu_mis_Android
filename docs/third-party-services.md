@@ -84,6 +84,7 @@ dist/
 - `origins` 按 `connect`、`media`、`frame`、`navigation` 分离；公开包只接受标准 HTTPS
   origin，不接受路径、通配符、校园域名、私网、回环或链路本地地址。
 - `origins.frame` 需要 `remote.frame@1`。远程 frame 永远无原生桥。
+- 远程 iframe 必须显式声明 sandbox；允许空 sandbox 或只开放必要权限，不强制开放脚本、表单和 same-origin。弹窗、下载、顶层导航等危险 sandbox token 仍由共享 lint 与 CLI 拒绝。
 - 使用 `storage.kv@2` 或 `storage.blob@1` 时必须声明正整数
   `data_schema_version`；版本增加时必须提供 `migration_entrypoint`。
 - `permissions`、`runtime_version`、`min_runtime_version`、`bridge_origins`、内嵌

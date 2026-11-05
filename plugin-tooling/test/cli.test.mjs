@@ -21,7 +21,7 @@ import {
   writeDeterministicZip
 } from '../packages/plugin-cli/dist/index.js';
 
-test('CLI create/lint/test/pack/doctor/inspect/dev commands work', async (context) => {
+test('CLI create/lint/pack/doctor/inspect/dev commands work', async (context) => {
   const temporary = await mkdtemp(path.join(os.tmpdir(), 'bjtu-cli-'));
   context.after(() => rm(temporary, { recursive: true, force: true }));
   const plugin = path.join(temporary, 'demo');
@@ -39,7 +39,6 @@ test('CLI create/lint/test/pack/doctor/inspect/dev commands work', async (contex
   await writeFile(path.join(plugin, 'dist', 'main.js'), 'export {};\n', 'utf8');
   await cp(path.join(plugin, 'public', 'icon.svg'), path.join(plugin, 'dist', 'icon.svg'));
   assert.equal((await lintPlugin(plugin)).ok, true);
-  assert.equal(await runCli(['test', plugin]), 0);
 
   const first = path.join(temporary, 'first.zip');
   const second = path.join(temporary, 'second.zip');

@@ -14,12 +14,20 @@
     "generate:check": "node scripts/generate.mjs --check",
     "build": "npm run generate:check && npm run build -w @bjtu-mis/plugin-sdk && npm run build -w @bjtu-mis/plugin-cli && npm run build -w create-bjtu-plugin",
     "typecheck": "npm run generate:check && tsc -p tsconfig.json --noEmit && npm run template:check",
-    "template:check": "npm run build -w @bjtu-mis/plugin-sdk && tsc -p packages/plugin-cli/template/tsconfig.json --noEmit && node scripts/check-template.mjs",
-    "test": "npm run build && node --test --experimental-test-isolation=none test/*.test.mjs",
-    "pack:check": "npm run build && node scripts/pack-check.mjs"
+    "template:check": "npm run build -w @bjtu-mis/plugin-sdk && npm run template:check:built",
+    "template:check:built": "tsc -p packages/plugin-cli/template/tsconfig.json --noEmit && node scripts/check-template.mjs",
+    "typecheck:built": "tsc -p tsconfig.json --noEmit && npm run template:check:built",
+    "test": "npm run build && npm run test:unit:built",
+    "test:unit:built": "node --test --experimental-test-isolation=none test/*.test.mjs",
+    "test:browser": "npm run build && npm run test:browser:built",
+    "test:browser:built": "node --test test/browser/*.test.mjs",
+    "pack:check": "npm run build && npm run pack:check:built",
+    "pack:check:built": "node scripts/pack-check.mjs",
+    "check:ci": "npm run build && npm run typecheck:built && npm run test:unit:built && npm run pack:check:built"
   },
   "devDependencies": {
     "@types/node": "^22.18.6",
+    "ajv": "^8.20.0",
     "typescript": "^5.9.3",
     "vite": "^7.1.7"
   }
