@@ -111,14 +111,30 @@ class WebViewProvisioningTests(unittest.TestCase):
         with zipfile.ZipFile(source, 'w') as archive:
             archive.writestr('AndroidManifest.xml', self.manifest())
             archive.writestr('classes.dex', b'original engine code')
-            archive.writestr('resources.arsc', b'original resources')
+            archive.writestr('resources.arsc', self.resources_table())
             archive.writestr('lib/x86_64/engine.so', b'original native engine')
             archive.writestr('META-INF/OLD.SF', b'old signature')
         webview.repackage(source, output)
         with zipfile.ZipFile(source) as original, zipfile.ZipFile(output) as rewritten:
             self.assertNotIn('META-INF/OLD.SF', rewritten.namelist())
-            for name in ['classes.dex', 'resources.arsc', 'lib/x86_64/engine.so']:
+            for name in ['classes.dex', 'lib/x86_64/engine.so']:
                 self.assertEqual(original.read(name), rewritten.read(name))
+
+    @staticmethod
+    def resources_table(package='com.android.webview'):
+        body = struct.pack('<HHII', 0x200, 288, 304, 0) + package.encode('utf-16-le').ljust(256, b'\0') + b'unchanged resource values'.ljust(36, b'\0')
+        return struct.pack('<HHII', 2, 12, 12 + len(body), 1) + body
+
+    def test_resource_rename_preserves_ids_values_offsets_and_length(self):
+        original = self.resources_table()
+        renamed = webview.rename_resource_package(original)
+        self.assertEqual(len(original), len(renamed))
+        self.assertEqual(original[:24], renamed[:24])
+        self.assertEqual(original[280:], renamed[280:])
+        self.assertEqual(renamed[24:280], webview.PACKAGE.encode('utf-16-le').ljust(256, b'\0'))
+        for malformed in [b'invalid', self.resources_table('wrong.package'), original[:-1]]:
+            with self.assertRaises(ValueError):
+                webview.rename_resource_package(malformed)
 
     def test_non_emulator_wrong_api_and_non_debuggable_devices_are_rejected_before_install(self):
         for properties in [{'ro.kernel.qemu': '0'}, {'ro.build.version.sdk': '35'}, {'ro.build.type': 'user'}]:

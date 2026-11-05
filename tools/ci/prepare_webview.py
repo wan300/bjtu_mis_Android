@@ -206,7 +206,30 @@ def repackage(source, output):
             content = original.read(entry)
             if entry.filename == 'AndroidManifest.xml':
                 content = rename_manifest(content)
+            elif entry.filename == 'resources.arsc':
+                content = rename_resource_package(content)
             rewritten.writestr(entry, content)
+
+
+def rename_resource_package(data):
+    if len(data) < 12 or struct.unpack_from('<HHII', data) != (2, 12, len(data), 1):
+        raise ValueError('Unexpected WebView resource table')
+    position = 12
+    names = []
+    while position + 8 <= len(data):
+        kind, header, size = struct.unpack_from('<HHI', data, position)
+        if size < header or header < 8 or position + size > len(data):
+            raise ValueError('Invalid WebView resource chunk')
+        if kind == 0x200:
+            if header != 288:
+                raise ValueError('Unexpected WebView resource package header')
+            names.append(position + 12)
+        position += size
+    original = 'com.android.webview'.encode('utf-16-le').ljust(256, b'\0')
+    if position != len(data) or len(names) != 1 or data[names[0]:names[0] + 256] != original:
+        raise ValueError('Expected exactly one AOSP WebView resource package')
+    position = names[0]
+    return data[:position] + PACKAGE.encode('utf-16-le').ljust(256, b'\0') + data[position + 256:]
 
 
 def install(cache, serial=None):

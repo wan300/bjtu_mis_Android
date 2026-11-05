@@ -38,7 +38,7 @@ APK 来源固定为 `android.googlesource.com/platform/external/chromium-webview
 
 大型 APK 通过官方 Git 仓库 partial clone/sparse checkout 获取，固定 tag 同时校验 commit `479929d2f7c4e3484903132afa864b1f68dd2705` 和 APK 摘要，避免 Gitiles 大型 Base64 请求的 503。Git 传输关闭重定向并有界重试；小型公开证书 HTTPS 获取仅对临时网络错误重试。摘要、来源 commit 和签名错误均停止。API 26 的 userdata 分区为 4 GiB，用于测试 APK 安装/解压，插件配额保持不变。
 
-官方 API 26 default 镜像预装 `com.android.webview`，框架却只登记 Google/Chrome 包名。脚本核验该官方镜像 `framework-res.apk` 的固定 SHA-256（`63dbee0f89fd1ed6a0ff123a495d53c5c9ce47cec8f47ca082065d567ac6f0e9`），然后仅将临时 APK Manifest 的根包名和四个 ContentProvider authority 字符串调整为框架已登记的 `com.google.android.apps.chrome`，这是 [Chromium 文档推荐的调试包名](https://chromium.googlesource.com/chromium/src/+/main/android_webview/docs/build-instructions.md)。引擎代码、native 库、资源、Manifest 权限及 WebViewLibrary 元数据保持原样；不修改框架白名单或系统分区。
+官方 API 26 default 镜像预装 `com.android.webview`，框架却只登记 Google/Chrome 包名。脚本核验该官方镜像 `framework-res.apk` 的固定 SHA-256（`63dbee0f89fd1ed6a0ff123a495d53c5c9ce47cec8f47ca082065d567ac6f0e9`），然后将临时 APK Manifest 的根包名和四个 ContentProvider authority 字符串调整为框架已登记的 `com.google.android.apps.chrome`，并同步 resources.arsc 的固定长度资源包名字段，这是 [Chromium 文档推荐的调试包名](https://chromium.googlesource.com/chromium/src/+/main/android_webview/docs/build-instructions.md)。引擎代码、native 库、资源 ID/值、Manifest 权限及 WebViewLibrary 元数据保持原样；不修改框架白名单或系统分区。
 
 临时 APK 使用 SDK zipalign 对齐，再使用同一官方固定 tag 的公开 AOSP development testkey 签名并验证证书；build-tools 36/37 的证书输出格式均支持，仍要求每个证书摘要匹配固定值。测试材料的摘要固定在脚本中，既不读取也不修改 App release/debug 签名配置。无需 ADB root、系统分区修改或签名检查绕过。
 
