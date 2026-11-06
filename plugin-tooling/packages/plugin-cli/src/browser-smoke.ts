@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
-import { stat, readFile } from 'node:fs/promises';
+import { stat, readFile, mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import {
   CAPABILITY_MOCK_RESPONSES,
@@ -39,8 +40,9 @@ export async function runBrowserSmokeTest(
     .split('/')
     .map(encodeURIComponent)
     .join('/')}`;
+  const profile = await mkdtemp(path.join(os.tmpdir(), 'bjtu-smoke-profile-'));
   try {
-    const result = await runBrowser(browser, target);
+    const result = await runBrowser(browser, target, profile);
     if (!result.dom.includes('data-bjtu-smoke-loaded="true"')) {
       throw new Error('Browser smoke test did not reach the window load event.');
     }
@@ -58,6 +60,7 @@ export async function runBrowserSmokeTest(
     return { browser, requestCount };
   } finally {
     await close(server);
+    await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 }
 
@@ -262,10 +265,12 @@ async function executableWorks(executable: string): Promise<boolean> {
 
 async function runBrowser(
   browser: string,
-  target: string
+  target: string,
+  profile: string
 ): Promise<{ dom: string; stderr: string }> {
   const args = [
     '--headless=new',
+    `--user-data-dir=${profile}`,
     '--disable-background-networking',
     '--disable-component-update',
     '--disable-default-apps',
@@ -316,7 +321,7 @@ async function runBrowser(
     child.stdout.on('data', collect(stdout));
     child.stderr.on('data', collect(stderr));
     child.once('error', (error) => finish(error));
-    child.once('exit', (code) => {
+    child.once('close', (code) => {
       if (code !== 0) {
         finish(
           new Error(
@@ -329,7 +334,7 @@ async function runBrowser(
     });
     timer = setTimeout(() => {
       child.kill();
-      finish(new Error(`Headless browser exceeded ${SMOKE_TIMEOUT_MS} ms.`));
+      finish(new Error(`Headless browser exceeded ${SMOKE_TIMEOUT_MS} ms. ${Buffer.concat(stderr).toString('utf8').slice(-8192)}`));
     }, SMOKE_TIMEOUT_MS);
   });
 }

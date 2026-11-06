@@ -1,0 +1,242 @@
+import base64
+import binascii
+import hashlib
+import importlib.util
+import io
+import struct
+from pathlib import Path
+import tempfile
+import unittest
+import zipfile
+from unittest.mock import Mock, patch
+
+spec = importlib.util.spec_from_file_location('prepare_webview', Path(__file__).resolve().parents[1] / 'prepare_webview.py')
+webview = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(webview)
+
+
+class WebViewProvisioningTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.cache = Path(temporary.name)
+        self.resources = {}
+        for name in webview.RESOURCES:
+            content = f'synthetic fixture {name}'.encode()
+            (self.cache / name).write_bytes(content)
+            self.resources[name] = ('https://example.invalid/' + name, hashlib.sha256(content).hexdigest(), 1024)
+        patched = patch.object(webview, 'RESOURCES', self.resources)
+        patched.start()
+        self.addCleanup(patched.stop)
+
+    def fake_run(self, properties=None, provider=True, certificate=True, selection='Success', active=True, devices=None, signer_label='Signer #1'):
+        calls = []
+        state = {'selected': False}
+        values = {'ro.kernel.qemu': '1', 'ro.build.version.sdk': '26', 'ro.build.type': 'userdebug', **(properties or {})}
+
+        def run(args):
+            calls.append(args)
+            if args == ['adb', 'devices']:
+                return devices if devices is not None else 'List of devices attached\nemulator-5554\tdevice'
+            if 'getprop' in args:
+                return values[args[-1]]
+            if 'sha256sum' in args:
+                return (webview.FRAMEWORK_SHA256 if provider else 'unknown') + '  /system/framework/framework-res.apk'
+            if 'dumpsys' in args:
+                if state['selected']:
+                    return f'Current WebView package (name, version): ({webview.PACKAGE}, {webview.VERSION if active else "wrong"})'
+                return 'Valid package ' + (webview.PACKAGE if provider else 'com.google.android.webview')
+            if 'verify' in args:
+                return signer_label + ' certificate SHA-256 digest: ' + (webview.TEST_CERTIFICATE if certificate else 'invalid')
+            if 'set-webview-implementation' in args:
+                state['selected'] = True
+                return selection
+            return 'Success'
+        return run, calls
+
+    def install(self, **options):
+        runner, calls = self.fake_run(**options)
+        with patch.object(webview, 'run', side_effect=runner), patch.object(webview, 'apksigner', return_value='/sdk/apksigner'), \
+                patch.object(webview, 'build_tool', return_value='/sdk/zipalign'), patch.object(webview, 'repackage'):
+            webview.install(self.cache)
+        return calls
+
+    def test_success_signs_verifies_selects_and_confirms_actual_provider(self):
+        calls = self.install()
+        self.assertTrue(any('sign' in args for args in calls))
+        self.assertTrue(any('verify' in args for args in calls))
+        self.assertTrue(any('-p' in args for args in calls))
+        self.assertTrue(any('install' in args for args in calls))
+        self.assertTrue(all(args[:3] == ['adb', '-s', 'emulator-5554'] for args in calls if args[0] == 'adb' and args != ['adb', 'devices']))
+        self.install(signer_label='V3.0 Signer:')  # build-tools 37 changed its output label.
+
+    def test_explicit_serial_must_be_a_connected_emulator(self):
+        runner, calls = self.fake_run(devices='emulator-5554\tdevice\nemulator-5556\tdevice')
+        with patch.object(webview, 'run', side_effect=runner), patch.object(webview, 'apksigner', return_value='/sdk/apksigner'), \
+                patch.object(webview, 'build_tool', return_value='/sdk/zipalign'), patch.object(webview, 'repackage'):
+            webview.install(self.cache, 'emulator-5554')
+            self.assertFalse(any('emulator-5556' in args for args in calls if args[0] == 'adb' and args != ['adb', 'devices']))
+            for serial in ['physical', 'emulator-9999']:
+                with self.assertRaises(ValueError):
+                    webview.install(self.cache, serial)
+
+    @staticmethod
+    def manifest(package='com.android.webview'):
+        strings = [package, 'unchanged.permission', 'com.android.webview.WebViewLibrary'] + [
+            'com.android.webview.' + suffix for suffix in ('LicenseContentProvider', 'DeveloperModeContentProvider',
+            'SafeModeVariationsSeedContentProvider', 'SafeModeContentProvider')]
+        encoded = [struct.pack('<H', len(s)) + s.encode('utf-16-le') + b'\0\0' for s in strings]
+        pool = b''.join(encoded)
+        pool += b'\0' * (-len(pool) % 4)
+        start = 28 + len(strings) * 4
+        size = start + len(pool)
+        offsets = [sum(map(len, encoded[:i])) for i in range(len(encoded))]
+        return (struct.pack('<HHI', 3, 8, 8 + size + 8) + struct.pack('<HH6I', 1, 28, size, len(strings), 0, 0, start, 0) +
+                struct.pack(f'<{len(strings)}I', *offsets) + pool + b'XMLTAIL!')
+
+    def test_manifest_rename_preserves_other_strings_and_xml_nodes(self):
+        renamed = webview.rename_manifest(self.manifest())
+        self.assertIn(webview.PACKAGE.encode('utf-16-le'), renamed)
+        self.assertIn((webview.PACKAGE + '.LicenseContentProvider').encode('utf-16-le'), renamed)
+        self.assertIn('com.android.webview.WebViewLibrary'.encode('utf-16-le'), renamed)
+        self.assertIn('unchanged.permission'.encode('utf-16-le'), renamed)
+        self.assertTrue(renamed.endswith(b'XMLTAIL!'))
+        self.assertEqual(struct.unpack_from('<I', renamed, 4)[0], len(renamed))
+        for malformed in [b'invalid', self.manifest('wrong.package'), self.manifest()[:-1]]:
+            with self.assertRaises(ValueError):
+                webview.rename_manifest(malformed)
+
+    def test_apk_repackaging_changes_only_manifest_and_signing_metadata(self):
+        source, output = self.cache / 'source.apk', self.cache / 'output.apk'
+        with zipfile.ZipFile(source, 'w') as archive:
+            archive.writestr('AndroidManifest.xml', self.manifest())
+            archive.writestr('classes.dex', b'original engine code')
+            archive.writestr('resources.arsc', self.resources_table())
+            archive.writestr('lib/x86_64/engine.so', b'original native engine')
+            archive.writestr('META-INF/OLD.SF', b'old signature')
+        webview.repackage(source, output)
+        with zipfile.ZipFile(source) as original, zipfile.ZipFile(output) as rewritten:
+            self.assertNotIn('META-INF/OLD.SF', rewritten.namelist())
+            for name in ['classes.dex', 'lib/x86_64/engine.so']:
+                self.assertEqual(original.read(name), rewritten.read(name))
+
+    @staticmethod
+    def resources_table(package='com.android.webview'):
+        body = struct.pack('<HHII', 0x200, 288, 304, 0) + package.encode('utf-16-le').ljust(256, b'\0') + b'unchanged resource values'.ljust(36, b'\0')
+        return struct.pack('<HHII', 2, 12, 12 + len(body), 1) + body
+
+    def test_resource_rename_preserves_ids_values_offsets_and_length(self):
+        original = self.resources_table()
+        renamed = webview.rename_resource_package(original)
+        self.assertEqual(len(original), len(renamed))
+        self.assertEqual(original[:24], renamed[:24])
+        self.assertEqual(original[280:], renamed[280:])
+        self.assertEqual(renamed[24:280], webview.PACKAGE.encode('utf-16-le').ljust(256, b'\0'))
+        for malformed in [b'invalid', self.resources_table('wrong.package'), original[:-1]]:
+            with self.assertRaises(ValueError):
+                webview.rename_resource_package(malformed)
+
+    def test_non_emulator_wrong_api_and_non_debuggable_devices_are_rejected_before_install(self):
+        for properties in [{'ro.kernel.qemu': '0'}, {'ro.build.version.sdk': '35'}, {'ro.build.type': 'user'}]:
+            runner, calls = self.fake_run(properties=properties)
+            with patch.object(webview, 'run', side_effect=runner), self.assertRaises(ValueError):
+                webview.install(self.cache)
+            self.assertFalse(any('install' in args for args in calls))
+        for devices in ['List of devices attached\nphysical\tdevice', 'emulator-5554\tdevice\nemulator-5556\tdevice']:
+            with self.assertRaises(ValueError):
+                self.install(devices=devices)
+
+    def test_wrong_framework_signer_selection_or_active_version_fails_closed(self):
+        for options in [{'provider': False}, {'certificate': False}, {'selection': 'Failed'}, {'active': False}]:
+            with self.assertRaises(ValueError):
+                self.install(**options)
+
+    def test_corrupt_cached_input_is_rejected_before_any_device_command(self):
+        for name in self.resources:
+            original = (self.cache / name).read_bytes()
+            (self.cache / name).write_bytes(b'corrupt')
+            with patch.object(webview, 'run') as runner, self.assertRaises(ValueError):
+                webview.install(self.cache)
+            runner.assert_not_called()
+            (self.cache / name).write_bytes(original)
+
+    def test_download_decode_requires_valid_base64_and_pinned_digest(self):
+        output = self.cache / 'decoded.apk'
+        content = (self.cache / 'webview.apk').read_bytes()
+        webview.decode_resource(base64.b64encode(content), output, 'webview.apk')
+        for encoded in [b'!invalid!', base64.b64encode(b'wrong artifact')]:
+            with self.assertRaises((ValueError, binascii.Error)):
+                webview.decode_resource(encoded, output, 'webview.apk')
+
+    def test_cache_hits_still_validate_every_input_without_network(self):
+        with patch.object(webview.urllib.request, 'build_opener') as opener:
+            webview.fetch(self.cache)
+            opener.return_value.open.assert_not_called()
+            (self.cache / 'testkey.pk8').write_bytes(b'corrupt')
+            with self.assertRaises(ValueError):
+                webview.fetch(self.cache)
+
+    def test_redirects_are_rejected(self):
+        with self.assertRaises(ValueError):
+            webview.NoRedirect().redirect_request(None, None, 302, '', {}, 'http://example.invalid')
+
+    def test_http_retries_only_transient_errors(self):
+        opener = Mock()
+        opener.open.side_effect = [webview.urllib.error.HTTPError('https://example.invalid', 503, '', {}, None), io.BytesIO(b'YWJj')]
+        with patch.object(webview.time, 'sleep') as sleep:
+            self.assertEqual(webview.read_encoded(opener, 'https://example.invalid', 100), b'YWJj')
+            sleep.assert_called_once()
+        for error in [webview.urllib.error.HTTPError('https://example.invalid', 403, '', {}, None),
+                      webview.urllib.error.URLError(webview.ssl.SSLCertVerificationError('bad certificate')),
+                      ValueError('redirect forbidden')]:
+            opener = Mock()
+            opener.open.side_effect = error
+            with patch.object(webview.time, 'sleep') as sleep, self.assertRaises(type(error)):
+                webview.read_encoded(opener, 'https://example.invalid', 100)
+            sleep.assert_not_called()
+            self.assertEqual(opener.open.call_count, 1)
+
+    def test_http_retry_budget_and_size_limit_are_enforced(self):
+        opener = Mock()
+        opener.open.side_effect = webview.urllib.error.HTTPError('https://example.invalid', 503, '', {}, None)
+        with patch.object(webview.time, 'sleep'), self.assertRaises(webview.urllib.error.HTTPError):
+            webview.read_encoded(opener, 'https://example.invalid', 100)
+        self.assertEqual(opener.open.call_count, 3)
+        opener.open.side_effect = None
+        opener.open.return_value = io.BytesIO(b'oversized')
+        with self.assertRaises(ValueError):
+            webview.read_encoded(opener, 'https://example.invalid', 2)
+
+    def git_runner(self, commit=None, content=None):
+        calls = []
+        def run(args, **kwargs):
+            calls.append(args)
+            if 'clone' in args:
+                provider = Path(args[-1]) / 'prebuilt/x86_64/webview.apk'
+                provider.parent.mkdir(parents=True)
+                provider.write_bytes(content if content is not None else (self.cache / 'webview.apk').read_bytes())
+            return (commit or webview.WEBVIEW_COMMIT) if 'rev-parse' in args else ''
+        return run, calls
+
+    def test_git_checkout_requires_pinned_commit_and_digest(self):
+        output = self.cache / 'fetched.apk'
+        runner, calls = self.git_runner()
+        with patch.object(webview, 'run', side_effect=runner):
+            webview.fetch_apk_git(output)
+        self.assertEqual(output.read_bytes(), (self.cache / 'webview.apk').read_bytes())
+        self.assertTrue(all('http.followRedirects=false' in args for args in calls if 'rev-parse' not in args))
+        for options in [{'commit': 'wrong'}, {'content': b'wrong artifact'}]:
+            runner, _ = self.git_runner(**options)
+            with patch.object(webview, 'run', side_effect=runner), self.assertRaises(ValueError):
+                webview.fetch_apk_git(self.cache / 'rejected.apk')
+            self.assertFalse((self.cache / 'rejected.apk').exists())
+
+    def test_git_transport_has_a_bounded_retry_budget(self):
+        with patch.object(webview, 'run', side_effect=webview.subprocess.CalledProcessError(1, ['git'])) as runner, \
+                patch.object(webview.time, 'sleep'), self.assertRaises(webview.subprocess.CalledProcessError):
+            webview.fetch_apk_git(self.cache / 'rejected.apk')
+        self.assertEqual(runner.call_count, 2)
+
+
+if __name__ == '__main__':
+    unittest.main()

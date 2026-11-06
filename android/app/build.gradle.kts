@@ -292,6 +292,10 @@ dependencies {
     androidTestImplementation(libs.androidx.room.testing)
 }
 
-tasks.named("preBuild") {
-    dependsOn(syncOpenWebUiAssets)
+// Asset packaging needs the real frontend; Kotlin compilation and JVM tests do not.
+// Include every variant (and test APK) rather than hard-coding debug/release names.
+tasks.configureEach {
+    if (name.startsWith("merge") && name.endsWith("Assets")) {
+        dependsOn(syncOpenWebUiAssets)
+    }
 }

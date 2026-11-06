@@ -597,12 +597,6 @@ function scanIframeSandboxes(dist, frameOrigins, result) {
       if (forbidden.length) {
         result.errors.push(`${path.relative(dist, file)} remote iframe sandbox grants forbidden tokens: ${forbidden.join(', ')}.`);
       }
-      const missing = ['allow-scripts', 'allow-forms', 'allow-same-origin'].filter(
-        (token) => !tokens.has(token)
-      );
-      if (missing.length) {
-        result.errors.push(`${path.relative(dist, file)} remote iframe sandbox must include ${missing.join(', ')}.`);
-      }
     }
   }
 }

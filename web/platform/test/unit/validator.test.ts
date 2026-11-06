@@ -322,6 +322,13 @@ test('lint requires a restricted sandbox for declared remote iframes', async (t)
   lint.lintPlugin(root, result, schema);
 
   assert.ok(result.errors.some((error) => error.includes('allow-popups')));
+  for (const sandbox of ['', 'allow-scripts']) {
+    await fs.writeFile(path.join(root, 'dist', 'index.html'),
+      `<iframe src="https://example.com/embed" sandbox="${sandbox}"></iframe>`);
+    const stricter: LintResult = { errors: [], warnings: [] };
+    lint.lintPlugin(root, stricter, schema);
+    assert.deepEqual(stricter.errors, [], sandbox);
+  }
 });
 
 test('lint binds navigation origins to navigation.external capability', async (t) => {

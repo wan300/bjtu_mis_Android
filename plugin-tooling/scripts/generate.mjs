@@ -1,6 +1,7 @@
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { matchesGeneratedContent, validateRegistrySchema } from './registry-validation.mjs';
 
 const toolingRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = path.resolve(toolingRoot, '..');
@@ -36,7 +37,7 @@ for (const [relativePath, content] of outputs) {
   const absolutePath = path.join(repositoryRoot, relativePath);
   if (checkOnly) {
     const current = await readFile(absolutePath, 'utf8').catch(() => null);
-    if (current !== content) drift.push(relativePath);
+    if (!matchesGeneratedContent(current, content)) drift.push(relativePath);
   } else {
     const current = await readFile(absolutePath, 'utf8').catch(() => null);
     if (current === content) continue;
@@ -60,6 +61,7 @@ if (drift.length) {
 }
 
 function validateRegistry(value) {
+  validateRegistrySchema(value);
   if (!value || typeof value !== 'object') throw new Error('Contract registry must be an object.');
   if (value.contractProfile !== 'contract_v1') throw new Error('Unsupported contract profile.');
   if (value.schemaVersion !== 3 || value.protocolVersion !== 2) {

@@ -58,7 +58,7 @@ Copy-Item release-signing.properties.example release-signing.properties
 构建脚本会识别向导注入的临时签名参数，不要求额外创建
 `release-signing.properties`。选择与旧版相同的 keystore 和 alias，才能保持覆盖升级兼容。
 
-`assembleDebug` 和 `assembleRelease` 会在 `preBuild` 阶段自动构建嵌入的 Open WebUI 前端：
+`assembleDebug` 和 `assembleRelease` 会在资产合并（`merge*Assets`）阶段自动构建嵌入的 Open WebUI 前端；纯 JVM 测试和仅 Kotlin 编译不会安装或构建前端：
 
 1. 在 `open-webui/` 执行 `npm ci`。
 2. 使用 `ENABLE_MOBILE_CLIENT=true` 和 `ENABLE_MOBILE_NATIVE_FEATURES=true` 执行 `npm run build`。

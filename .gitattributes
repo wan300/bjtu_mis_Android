@@ -1,0 +1,9 @@
+# Generated contract artifacts have canonical bytes on every development platform.
+docs/third-party-service-manifest.schema.json text eol=lf
+web/assets/schemas/third-party-service-manifest.schema.json text eol=lf
+docs/bjtu-marketplace.schema.json text eol=lf
+web/assets/schemas/bjtu-marketplace.schema.json text eol=lf
+plugin-tooling/packages/plugin-sdk/src/generated/contracts.ts text eol=lf
+android/app/src/main/java/cn/edu/bjtu/mis/data/thirdparty/generated/GeneratedCapabilityContracts.kt text eol=lf
+web/platform/src/generated/plugin-contract.ts text eol=lf
+docs/generated/plugin-capability-api.md text eol=lf

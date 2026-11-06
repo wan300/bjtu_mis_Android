@@ -5,6 +5,9 @@ import { createDatabase } from '../../src/db.js';
 import { runMigrations } from '../../src/migrate.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
+if (process.env.CI && !databaseUrl) {
+  throw new Error('CI integration tests require TEST_DATABASE_URL; refusing to skip database validation.');
+}
 
 test('migrations create the plugin catalog tables', { skip: !databaseUrl }, async () => {
   await runMigrations(databaseUrl!);

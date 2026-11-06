@@ -829,18 +829,6 @@ function validateRemoteIframes(
         )
       );
     }
-    const missing = ['allow-scripts', 'allow-forms', 'allow-same-origin'].filter(
-      (token) => !tokens.has(token)
-    );
-    if (missing.length) {
-      errors.push(
-        issue(
-          'iframe_sandbox',
-          `Remote iframe sandbox must include ${missing.join(', ')}.`,
-          file
-        )
-      );
-    }
   }
 }
 
