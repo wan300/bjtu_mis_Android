@@ -32,4 +32,26 @@ class NavigationMotionTest {
             appRouteTransitionDirection("profile_theme", ModuleKeys.Profile),
         )
     }
+
+    @Test
+    fun `homework detail returns backward to each originating module`() {
+        listOf(ModuleKeys.Homework, ModuleKeys.Timetable, ModuleKeys.Calendar).forEach { route ->
+            assertEquals(
+                AppRouteTransitionDirection.Forward,
+                appRouteTransitionDirection(route, "homework_detail"),
+            )
+            assertEquals(
+                AppRouteTransitionDirection.Backward,
+                appRouteTransitionDirection("homework_detail", route),
+            )
+        }
+    }
+
+    @Test
+    fun `plugin diagnostics returns backward to the service catalog`() {
+        assertEquals(
+            AppRouteTransitionDirection.Backward,
+            appRouteTransitionDirection("third_party_diagnostics", "third_party_services"),
+        )
+    }
 }

@@ -157,7 +157,7 @@ class AppleInterfaceUiTest {
         composeRule.onNodeWithContentDescription(dismissLabel).performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("ui-style-apple").assertIsSelected()
-        composeRule.onNodeWithText("已切换到 Apple 风格界面").assertDoesNotExist()
+        composeRule.onNodeWithText("已切换到主题2").assertDoesNotExist()
     }
 
     @Test

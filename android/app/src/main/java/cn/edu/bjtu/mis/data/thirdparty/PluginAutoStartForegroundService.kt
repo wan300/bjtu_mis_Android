@@ -31,7 +31,7 @@ class PluginAutoStartForegroundService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         runCatching {
             startForeground(NOTIFICATION_ID, Notification.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.drawable.loading_mascot)
+                .setSmallIcon(R.drawable.ic_notification_24)
                 .setContentTitle(getString(R.string.plugin_autostart_notification_title))
                 .setContentText(getString(R.string.plugin_autostart_notification_text))
                 .setContentIntent(openApp)

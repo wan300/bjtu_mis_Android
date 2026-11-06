@@ -19,11 +19,7 @@ suspend fun applyUiStyleChangeWithUndo(
     onPreview(nextAppearance)
     persist(nextStyle)
     val undone = showUndo(
-        if (nextStyle == AppUiStyle.Apple) {
-            "已切换到 Apple 风格界面"
-        } else {
-            "已切换到经典界面"
-        },
+        "已切换到${nextStyle.displayName}",
     )
     if (!undone) return UiStyleChangeOutcome.Applied
 

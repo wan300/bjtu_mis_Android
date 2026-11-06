@@ -36,7 +36,7 @@ class PluginNativeRuntimeService : Service() {
         startForeground(
             NOTIFICATION_ID,
             Notification.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.drawable.loading_mascot)
+                .setSmallIcon(R.drawable.ic_notification_24)
                 .setContentTitle(getString(R.string.plugin_automation_notification_title))
                 .setContentText(getString(R.string.plugin_automation_notification_text))
                 .setContentIntent(openApp)

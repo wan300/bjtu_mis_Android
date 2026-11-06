@@ -31,5 +31,17 @@ fun appRouteTransitionDirection(
     if (fromRoute.startsWith("third_party_service/") && toRoute == "third_party_services") {
         return AppRouteTransitionDirection.Backward
     }
+    if (fromRoute == "third_party_diagnostics" && toRoute == "third_party_services") {
+        return AppRouteTransitionDirection.Backward
+    }
+    if (
+        fromRoute == "homework_detail" && toRoute in setOf(
+            ModuleKeys.Homework,
+            ModuleKeys.Timetable,
+            ModuleKeys.Calendar,
+        )
+    ) {
+        return AppRouteTransitionDirection.Backward
+    }
     return AppRouteTransitionDirection.Forward
 }

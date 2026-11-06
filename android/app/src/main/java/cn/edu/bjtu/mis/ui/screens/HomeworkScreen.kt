@@ -34,6 +34,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,8 +76,8 @@ fun HomeworkScreen(
     onNavigate: (String) -> Unit,
     onOpenHomeworkDetail: (HomeworkItem) -> Unit,
 ) {
-    var status by remember { mutableStateOf("all") }
-    var expiredStatus by remember { mutableStateOf("expired") }
+    var status by rememberSaveable { mutableStateOf("all") }
+    var expiredStatus by rememberSaveable { mutableStateOf("expired") }
     val realNow = LocalDateTime.now()
 
     ProgressiveDataScreen(

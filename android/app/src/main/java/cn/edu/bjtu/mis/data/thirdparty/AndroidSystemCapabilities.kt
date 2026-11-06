@@ -888,7 +888,7 @@ class PluginAccessibilityService : AccessibilityService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification = Notification.Builder(this, NOTIFICATION_CHANNEL)
-            .setSmallIcon(R.drawable.loading_mascot)
+            .setSmallIcon(R.drawable.ic_notification_24)
             .setContentTitle(getString(R.string.plugin_automation_notification_title))
             .setContentText(getString(R.string.plugin_automation_notification_text))
             .setContentIntent(openApp)

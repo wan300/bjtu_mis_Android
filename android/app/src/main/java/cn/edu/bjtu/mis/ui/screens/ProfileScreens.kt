@@ -50,12 +50,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.testTag
@@ -418,15 +421,15 @@ fun ProfileThemeScreen(
                 subtitle = "界面样式与配色相互独立，切换后立即生效",
             ) {
                 InterfaceStyleChoice(
-                    title = "经典界面",
+                    title = AppUiStyle.Classic.displayName,
                     description = "保留原有导航、角色图标与页面布局",
                     selected = appearance.uiStyle == AppUiStyle.Classic,
                     style = AppUiStyle.Classic,
                     onSelected = onUiStyleSelected,
                 )
                 InterfaceStyleChoice(
-                    title = "Apple 风格界面",
-                    description = "更清晰的层级、系统图标与自适应布局",
+                    title = AppUiStyle.Apple.displayName,
+                    description = "更清晰的层级、动漫入口图标与自适应布局",
                     selected = appearance.uiStyle == AppUiStyle.Apple,
                     style = AppUiStyle.Apple,
                     onSelected = onUiStyleSelected,
@@ -528,6 +531,7 @@ private fun InterfaceStyleChoice(
     onSelected: (AppUiStyle) -> Unit,
 ) {
     val colorScheme = MaterialTheme.colorScheme
+    val showPreview = LocalDensity.current.fontScale < 1.5f
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -550,7 +554,7 @@ private fun InterfaceStyleChoice(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            InterfaceStylePreview(style)
+            if (showPreview) InterfaceStylePreview(style)
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -687,6 +691,7 @@ private fun EffectPreferenceRow(
                 }
             }
             Switch(
+                modifier = Modifier.semantics { contentDescription = title },
                 checked = effectiveValue,
                 onCheckedChange = { enabled ->
                     onOverrideChanged(
@@ -845,10 +850,14 @@ private fun ProfileSettingsIcon(
     color: Color,
     icon: ImageVector?,
 ) {
+    val badgeSize = with(LocalDensity.current) {
+        MaterialTheme.typography.labelLarge.lineHeight.toDp()
+    } + 16.dp
     Box(
         modifier = Modifier
-            .size(38.dp)
-            .background(color, CircleShape),
+            .size(maxOf(38.dp, badgeSize))
+            .background(color, CircleShape)
+            .padding(8.dp),
         contentAlignment = Alignment.Center,
     ) {
         if (LocalAppUiStyle.current == AppUiStyle.Apple && icon != null) {

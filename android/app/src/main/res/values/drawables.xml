@@ -1,0 +1,3 @@
+<resources>
+    <item name="loading_mascot_01" type="drawable">@drawable/loading_mascot</item>
+</resources>

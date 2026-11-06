@@ -108,15 +108,15 @@ fun CourseReplayNativePlayer(
     title: String?,
     subtitle: String?,
     initialState: CourseReplayPlayerResult?,
-    requestedStreamKind: String? = null,
     mode: CourseReplayPlayerMode,
     repository: CourseReplayRepository,
     okHttpClient: OkHttpClient,
+    modifier: Modifier = Modifier,
+    requestedStreamKind: String? = null,
     onOpenDedicated: ((CourseReplayPlayerResult) -> Boolean)? = null,
     onExit: (() -> Unit)? = null,
     onStateChanged: (CourseReplayPlayerResult) -> Unit = {},
     onPlaybackMetadataChanged: (Boolean, Float) -> Unit = { _, _ -> },
-    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val reduceTransparency = LocalAppEffects.current.reduceTransparency

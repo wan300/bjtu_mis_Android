@@ -257,7 +257,7 @@ class PluginBackgroundTaskService : Service() {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getBroadcast(this, 0, Intent(this, StopPluginAutomationReceiver::class.java), PendingIntent.FLAG_IMMUTABLE)
         try {
-            startForeground(24020, Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.loading_mascot)
+            startForeground(24020, Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_notification_24)
                 .setContentTitle("插件定时任务运行中").setContentText("每项最长 60 分钟；系统限制可能延迟回调")
                 .setContentIntent(open).setOngoing(true)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "全部停止", stop).build())

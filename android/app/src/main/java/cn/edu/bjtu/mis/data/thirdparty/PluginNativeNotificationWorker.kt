@@ -37,7 +37,7 @@ class PluginNativeNotificationWorker(
         manager.notify(
             id.hashCode(),
             NotificationCompat.Builder(applicationContext, channel)
-                .setSmallIcon(R.drawable.loading_mascot)
+                .setSmallIcon(R.drawable.ic_notification_24)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(body))

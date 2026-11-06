@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
@@ -80,6 +81,7 @@ object ScheduleExportStorage {
             savePngToLegacyPictures(context, document, displayName)
         }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun savePdfToMediaStore(
         context: Context,
         document: ScheduleExportDocument,
@@ -108,6 +110,7 @@ object ScheduleExportStorage {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun savePngToMediaStore(
         context: Context,
         document: ScheduleExportDocument,

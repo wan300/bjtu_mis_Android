@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Base64
+import androidx.annotation.RequiresApi
 import cn.edu.bjtu.mis.BjtuMisApplication
 import cn.edu.bjtu.mis.data.AppJson
 import cn.edu.bjtu.mis.data.agent.model.AgentAttachment
@@ -542,6 +543,7 @@ class NativeAgentToolsPlugin : Plugin() {
             saveFileToAppDownloads(file, mimeType)
         }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun saveFileToPublicDownloads(file: File, mimeType: String): SavedGeneratedFile {
         val displayName = safeDownloadFileName(file.name)
         val resolver = getContext().contentResolver

@@ -219,9 +219,9 @@ internal fun EmptyRoomQueryField(
     onValueChange: (String) -> Unit,
     label: String,
     options: List<TermOption>,
+    modifier: Modifier = Modifier,
     placeholder: String? = null,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    modifier: Modifier = Modifier,
 ) {
     if (options.isEmpty()) {
         OutlinedTextField(

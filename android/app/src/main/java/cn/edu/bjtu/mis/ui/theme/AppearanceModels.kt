@@ -2,9 +2,10 @@ package cn.edu.bjtu.mis.ui.theme
 
 enum class AppUiStyle(
     val storageValue: String,
+    val displayName: String,
 ) {
-    Classic("classic"),
-    Apple("apple");
+    Classic("classic", "主题1"),
+    Apple("apple", "主题2");
 
     companion object {
         fun fromStorageValue(value: String?): AppUiStyle =

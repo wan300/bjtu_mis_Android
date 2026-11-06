@@ -195,7 +195,7 @@ class AndroidNativeCapabilityProvider(
         val notificationId = UUID.randomUUID().hashCode()
         try {
             manager.notify(notificationId, NotificationCompat.Builder(context, channel)
-                .setSmallIcon(R.drawable.loading_mascot).setContentTitle("插件正在请求导入登录态")
+                .setSmallIcon(R.drawable.ic_notification_24).setContentTitle("插件正在请求导入登录态")
                 .setContentText("请在前台确认；来源包名：$packageName").setOngoing(true).build())
             if (!call.confirmer.confirm("导入登录态", "将应用自行提供的 $packageName 登录态交给插件“${call.service.manifest.name}”？\n字段：${credentials.keys.sorted().joinToString()}\n宿主不会读取其他应用或校园登录凭据。")) {
                 throw PluginRuntimeException("user_cancelled", "Credential import cancelled")
@@ -697,7 +697,7 @@ class AndroidNativeCapabilityProvider(
         manager.notify(
             notificationKey(serviceId, id).hashCode(),
             NotificationCompat.Builder(context, channel)
-                .setSmallIcon(R.drawable.loading_mascot)
+                .setSmallIcon(R.drawable.ic_notification_24)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(body))

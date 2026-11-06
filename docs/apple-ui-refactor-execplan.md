@@ -1,5 +1,7 @@
 # ExecPlan: BJTU MIS 双界面 Apple 风格重构
 
+当前用户可见名称已于 2026-11-05 统一为“主题1”（Classic / 原安卓风格）和“主题2”（Apple / 原苹果风格）。本文保留原设计与历史记录中的称呼；本轮检查及修复见 [主题2界面检查](theme2-ui-review.md)。
+
 ## 1. Title
 
 为 BJTU MIS 原生 Android 界面新增可即时切换、可回滚的 Apple 风格界面，同时完整保留经典界面和高风险操作确认边界。

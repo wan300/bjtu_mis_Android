@@ -27,9 +27,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Apps
@@ -61,6 +64,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -219,6 +223,7 @@ fun BjtuMisApp(
     var homeworkDetailReturnRoute by rememberSaveable { mutableStateOf(ModuleKeys.Homework) }
     var initialLoadStrategyConsumed by rememberSaveable { mutableStateOf(false) }
     var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
+    val routeStateHolder = rememberSaveableStateHolder()
 
     fun selectTheme(nextTheme: AppThemeOption) {
         if (nextTheme == appearance.theme) return
@@ -563,7 +568,7 @@ fun BjtuMisApp(
                 }
             }
 
-            val routeContent: @Composable (String) -> Unit = { route ->
+            val routeScreen: @Composable (String) -> Unit = { route ->
                 when (route) {
                     RouteHome -> OverviewScreen(
                         overviewRepository = container.overviewRepository,
@@ -666,6 +671,17 @@ fun BjtuMisApp(
                 }
             }
 
+            val routeContent: @Composable (String) -> Unit = { route ->
+                if (route == RouteHomeworkDetail) {
+                    // Different assignments share this route; do not reuse another item's scroll state.
+                    routeScreen(route)
+                } else {
+                    routeStateHolder.SaveableStateProvider(route) {
+                        routeScreen(route)
+                    }
+                }
+            }
+
             fun handleAppBack() {
                 when {
                     current == ModuleKeys.OpenWebUiAgent && openWebUiBackHandler?.invoke() == true -> Unit
@@ -673,6 +689,7 @@ fun BjtuMisApp(
                         thirdPartyServiceBackHandler?.invoke() == true -> Unit
                     thirdPartyServiceIdFromRoute(current) != null -> current = THIRD_PARTY_SERVICES_ROUTE
                     current == THIRD_PARTY_DIAGNOSTICS_ROUTE -> current = THIRD_PARTY_SERVICES_ROUTE
+                    current == THIRD_PARTY_SERVICES_ROUTE -> navigateMain(RouteServices)
                     current == RouteHomeworkDetail -> closeHomeworkDetail()
                     current !in MainRoutes -> current = mainTab
                     current != RouteHome -> navigateMain(RouteHome)
@@ -771,7 +788,7 @@ fun BjtuMisApp(
                         )
                         current == THIRD_PARTY_SERVICES_ROUTE -> DetailTitleBar(
                             title = "第三方服务",
-                            onBack = { current = RouteServices },
+                            onBack = { navigateMain(RouteServices) },
                         )
                         current == THIRD_PARTY_DIAGNOSTICS_ROUTE -> DetailTitleBar(
                             title = "插件运行环境诊断",
@@ -994,13 +1011,13 @@ private fun DetailTitleBar(title: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun CompactTitleBar(title: String, onBack: (() -> Unit)? = null) {
+internal fun CompactTitleBar(title: String, onBack: (() -> Unit)? = null) {
     val colorScheme = MaterialTheme.colorScheme
     val isApple = LocalAppUiStyle.current == AppUiStyle.Apple
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(if (isApple) 60.dp else 52.dp)
+            .then(if (isApple) Modifier.heightIn(min = 60.dp) else Modifier.height(52.dp))
             .background(if (isApple) colorScheme.surface else colorScheme.background)
             .padding(
                 start = if (onBack == null) {
@@ -1009,6 +1026,8 @@ private fun CompactTitleBar(title: String, onBack: (() -> Unit)? = null) {
                     4.dp
                 },
                 end = if (isApple) 20.dp else 16.dp,
+                top = if (isApple) 8.dp else 0.dp,
+                bottom = if (isApple) 8.dp else 0.dp,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1032,7 +1051,7 @@ private fun CompactTitleBar(title: String, onBack: (() -> Unit)? = null) {
             color = colorScheme.onBackground,
             fontSize = if (isApple) 22.sp else 20.sp,
             fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
+            maxLines = if (isApple) 2 else 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
@@ -1116,6 +1135,7 @@ internal fun AppNavigationRail(
         modifier = Modifier
             .fillMaxHeight()
             .width(92.dp)
+            .verticalScroll(rememberScrollState())
             .testTag("app-navigation-rail"),
         containerColor = colorScheme.surface,
     ) {
