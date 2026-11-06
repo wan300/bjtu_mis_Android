@@ -368,6 +368,12 @@ class ThirdPartyServiceRepository(
             needsReview = false,
             updatedAt = nowIso(),
         )
+        if ("network.request@2" !in normalized) {
+            PluginNetworkSessions.provider?.clearSessions(service.publisherSubjectId, service.serviceId)
+        }
+        if (PLUGIN_BACKGROUND_TASK_CAPABILITY !in normalized) {
+            PluginBackgroundTasks.revoke(service.publisherSubjectId, service.serviceId)
+        }
         if ("android.session.keepAlive@1" !in normalized) {
             PluginSessionKeepAlive.revoke(service.publisherSubjectId, service.serviceId)
         }

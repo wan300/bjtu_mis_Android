@@ -83,6 +83,11 @@
             android:foregroundServiceType="dataSync" />
 
         <service
+            android:name=".data.thirdparty.PluginBackgroundTaskService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
             android:name=".data.thirdparty.PluginNativeRuntimeService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />

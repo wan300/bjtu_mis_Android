@@ -268,7 +268,7 @@ jobs:
         run: python3 tools/ci/check_instrumentation.py android/app/build/outputs/androidTest-results/connected
       - name: Upload Android instrumentation diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: android-instrumentation-api-${{ matrix.api-level }}-diagnostics
           path: |

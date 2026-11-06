@@ -176,3 +176,5 @@ API 与兼容说明。
 第三方插件可声明 `android.session.keepAlive@1`（runtime 3），首次/增量授权后在前台申请/续租 MIS 会话保活，后台查询/释放。单租约最多 60 分钟，支持通知停止和撤销清理；详细协议见 [`docs/third-party-services.md`](../docs/third-party-services.md#插件-mis-会话保活runtime-3)。
 
 `android.app.autoStart@1`（runtime 4）只能作为可选声明，默认关闭。用户明确授予后，打开主应用且主 Activity 可见时宿主可加载插件本地入口，后台实例全局最多四个，持续通知可停止；不会开机启动、永久保活或扩大无障碍访问。详见 [`docs/third-party-services.md`](../docs/third-party-services.md#打开主应用时可选自启runtime-4)。
+
+插件通用接口已扩展结构化登录态导入、原生限时后台回调、表单编码、显式 IP 查询和隔离 Cookie v2；授权、系统限制与示例见 [第三方插件文档](../docs/third-party-services.md)。

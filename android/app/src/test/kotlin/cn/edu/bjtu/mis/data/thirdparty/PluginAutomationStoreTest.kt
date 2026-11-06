@@ -14,6 +14,42 @@ class PluginAutomationStoreTest {
     val temp = TemporaryFolder()
 
     @Test
+    fun interruptedMutationHidesOldSnapshotAndFreshSaveCannotRestoreIt() {
+        val root = temp.newFolder("interrupted")
+        val store = FilePluginAutomationStore(root, AutomationTestCipher)
+        val old = record("old", "publisher:1", "test.plugin")
+        store.save(old)
+        val snapshot = root.listFiles()!!.single()
+        java.io.File(root, ".${snapshot.name}.pending").writeText("1")
+        assertTrue(store.list().isEmpty())
+        val next = record("new", "publisher:1", "test.plugin")
+        store.save(next)
+        assertEquals(listOf(next), store.list())
+    }
+
+    @Test fun encryptionFailureCannotLeaveAnActiveSnapshotReadable() {
+        val root = temp.newFolder("key-failure")
+        var fail = false
+        val cipher = object : ThirdPartyKvCipher {
+            override fun encrypt(plaintext: ByteArray, associatedData: ByteArray): ByteArray {
+                check(!fail) { "Synthetic key failure" }
+                return AutomationTestCipher.encrypt(plaintext, associatedData)
+            }
+            override fun decrypt(payload: ByteArray, associatedData: ByteArray) =
+                AutomationTestCipher.decrypt(payload, associatedData)
+        }
+        val store = FilePluginAutomationStore(root, cipher)
+        store.save(record("old", "publisher:1", "test.plugin"))
+        store.save(record("battery", "publisher:1", "test.plugin").copy(capability = "android.battery.status@1"))
+        fail = true
+        assertThrows(IllegalStateException::class.java) { store.removeCapability("publisher:1", "test.plugin", "android.accessibility.events@1") }
+        fail = false
+        assertTrue(store.list().isEmpty())
+        store.clear()
+        assertTrue(store.list().isEmpty())
+    }
+
+    @Test
     fun encryptedSubscriptionsRemainPublisherAndPluginIsolated() {
         val root = temp.newFolder("automation")
         val store = FilePluginAutomationStore(root, AutomationTestCipher)

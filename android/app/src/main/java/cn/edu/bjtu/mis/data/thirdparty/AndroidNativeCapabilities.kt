@@ -64,6 +64,7 @@ class AndroidNativeCapabilityProvider(
     private val context: Context,
     private val resourceStore: ThirdPartyResourceStore,
     private val automationStore: PluginAutomationStore,
+    private val networkProvider: PluginNetworkProvider? = null,
 ) : PluginCapabilityProvider {
     private data class Recording(
         val recorder: MediaRecorder,
@@ -81,6 +82,7 @@ class AndroidNativeCapabilityProvider(
     }
 
     override val capabilityIds: Set<String> = setOf(
+        "android.credentials.import@1",
         "android.device.info@1",
         "android.network.status@1",
         "android.battery.status@1",
@@ -100,6 +102,7 @@ class AndroidNativeCapabilityProvider(
     )
 
     override suspend fun invoke(call: PluginCapabilityCall): JsonElement = when (call.capability) {
+        "android.credentials.import@1" -> importCredentials(call)
         "android.device.info@1" -> deviceInfo()
         "android.network.status@1" -> network(call)
         "android.battery.status@1" -> battery(call)
@@ -142,11 +145,67 @@ class AndroidNativeCapabilityProvider(
         put("appVersion", packageInfo.versionName.orEmpty().take(120))
     }
 
-    private fun network(call: PluginCapabilityCall): JsonElement = when (call.method) {
+    private suspend fun network(call: PluginCapabilityCall): JsonElement = when (call.method) {
         "getStatus" -> networkStatus()
+        "getAddresses" -> networkAddresses(call)
         "subscribe" -> AndroidNativeEventController.subscribe(call, "android.network.status@1")
         "unsubscribe" -> AndroidNativeEventController.unsubscribe(call)
         else -> invalidMethod(call)
+    }
+
+    private suspend fun networkAddresses(call: PluginCapabilityCall): JsonObject {
+        requireForeground(call)
+        if (!cn.edu.bjtu.mis.data.sync.AndroidSessionKeepAlive.foreground) throw PluginRuntimeException("foreground_required", "Visible activity required")
+        take("${call.service.publisherSubjectId}:${call.service.serviceId}:addresses", 6)
+        if (!call.confirmer.confirm("共享网络地址", "允许插件“${call.service.manifest.name}”读取当前 IPv4 地址？公网地址查询将访问插件声明的服务。")) {
+            throw PluginRuntimeException("user_cancelled", "Network address query cancelled")
+        }
+        val manager = context.getSystemService(ConnectivityManager::class.java)
+        val local = manager?.getLinkProperties(manager.activeNetwork)?.linkAddresses
+            ?.map { it.address }?.filterIsInstance<java.net.Inet4Address>()
+            ?.firstOrNull { !it.isLoopbackAddress && !it.isLinkLocalAddress }?.hostAddress
+        val publicUrl = call.params.string("publicIpUrl")
+        val publicIp = if (publicUrl != null) {
+            val provider = networkProvider ?: throw PluginRuntimeException("capability_unavailable", "Network provider unavailable")
+            val response = provider.execute(call.service, PluginNetworkRequest(
+                requestId = "address-${call.requestId}", method = "GET", url = publicUrl,
+            ))
+            if (response.status !in 200..299) throw PluginRuntimeException("http_error", "IP endpoint failed")
+            pluginPublicIp(response.text.orEmpty())
+                ?: throw PluginRuntimeException("invalid_request", "IP endpoint must return a plain public IP address")
+        } else null
+        return buildJsonObject {
+            local?.let { put("localIpv4", it) }; publicIp?.let { put("publicIp", it) }
+        }
+    }
+
+    private suspend fun importCredentials(call: PluginCapabilityCall): JsonObject {
+        requireForeground(call)
+        if (!cn.edu.bjtu.mis.data.sync.AndroidSessionKeepAlive.foreground) throw PluginRuntimeException("foreground_required", "Visible activity required")
+        take("${call.service.publisherSubjectId}:${call.service.serviceId}:credential-import", 6)
+        val packageName = call.params.requiredString("packageName")
+        val credentials = PluginCredentialImport.validate(packageName,
+            call.params["credentials"] as JsonObject, context.packageName)
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val channel = "plugin_credential_import"
+        manager.createNotificationChannel(NotificationChannel(channel, "插件登录态导入", NotificationManager.IMPORTANCE_LOW))
+        if (!manager.areNotificationsEnabled() || manager.getNotificationChannel(channel)?.importance == NotificationManager.IMPORTANCE_NONE) {
+            throw PluginRuntimeException("capability_unavailable", "Enable credential import notifications first")
+        }
+        val notificationId = UUID.randomUUID().hashCode()
+        try {
+            manager.notify(notificationId, NotificationCompat.Builder(context, channel)
+                .setSmallIcon(R.drawable.loading_mascot).setContentTitle("插件正在请求导入登录态")
+                .setContentText("请在前台确认；来源包名：$packageName").setOngoing(true).build())
+            if (!call.confirmer.confirm("导入登录态", "将应用自行提供的 $packageName 登录态交给插件“${call.service.manifest.name}”？\n字段：${credentials.keys.sorted().joinToString()}\n宿主不会读取其他应用或校园登录凭据。")) {
+                throw PluginRuntimeException("user_cancelled", "Credential import cancelled")
+            }
+            if (!cn.edu.bjtu.mis.data.sync.AndroidSessionKeepAlive.foreground || !manager.areNotificationsEnabled()) {
+                throw PluginRuntimeException("foreground_required", "Keep the app visible during credential import")
+            }
+            // Deliberately no idempotency receipt or persistent host copy containing these secrets.
+            return credentials
+        } finally { manager.cancel(notificationId) }
     }
 
     private fun battery(call: PluginCapabilityCall): JsonElement = when (call.method) {
@@ -695,6 +754,7 @@ internal class UnavailableAndroidNativeCapabilityProvider : PluginCapabilityProv
 }
 
 internal val ANDROID_NATIVE_CAPABILITY_IDS: Set<String> = setOf(
+    "android.credentials.import@1",
     "android.device.info@1",
     "android.network.status@1",
     "android.battery.status@1",

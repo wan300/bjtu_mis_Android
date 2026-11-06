@@ -19,6 +19,32 @@ class ThirdPartyServiceApiRegistryTest {
     val temp = TemporaryFolder()
 
     @Test
+    fun publicFormRouteEncodesStringFieldsAndRejectsCompositeValues() = runBlocking {
+        okhttp3.mockwebserver.MockWebServer().use { server ->
+            val origin = "http://form.public.test:${server.port}"
+            val base = service(required = setOf("runtime.lifecycle@1", "network.request@1"),
+                granted = setOf("runtime.lifecycle@1", "network.request@1"))
+            val service = base.copy(manifest = base.manifest.copy(origins = ThirdPartyOriginDeclaration(connect = listOf(origin))))
+            val resources = FileThirdPartyResourceStore(temp.newFolder("form-route"), PassThroughCipher,
+                limits = ThirdPartyResourceLimits(safetyBytes = 0))
+            val provider = PluginNetworkProvider.forTests(resources, resolver = object : okhttp3.Dns {
+                override fun lookup(hostname: String) = listOf(java.net.InetAddress.getByName("127.0.0.1"))
+            })
+            val registry = ThirdPartyServiceApiRegistry(null, null, networkProvider = provider)
+            server.enqueue(okhttp3.mockwebserver.MockResponse().setHeader("Content-Type", "text/plain").setBody("ok"))
+            suspend fun invoke(body: kotlinx.serialization.json.JsonObject) = registry.invoke(service, "network.request@1", "request",
+                buildJsonObject { put("url", "$origin/form"); put("method", "POST"); put("bodyType", "formUrlEncoded"); put("body", body) },
+                confirmer = allowAll, currentPageUrl = ThirdPartyServiceSandbox.entrypointUrlFor(service))
+            val response = invoke(buildJsonObject { put("name", "交大 +&"); put("empty", "") })
+            assertEquals(response.toString(), JsonPrimitive(true), response["ok"])
+            assertEquals("name=%E4%BA%A4%E5%A4%A7%20%2B%26&empty=", server.takeRequest().body.readUtf8())
+            val invalid = invoke(buildJsonObject { put("nested", buildJsonObject { put("value", "x") }) })
+            assertEquals("invalid_request", invalid["error"]!!.jsonObject["code"]!!.jsonPrimitive.content)
+            assertEquals(1, server.requestCount)
+        }
+    }
+
+    @Test
     fun everyGeneratedCapabilityHasAnAndroidProvider() {
         assertEquals(
             ThirdPartyCapabilityRegistry.capabilities
@@ -59,7 +85,7 @@ class ThirdPartyServiceApiRegistryTest {
         val result = response["result"]!!.jsonObject
         assertEquals(2, result["protocolVersion"]!!.jsonPrimitive.content.toInt())
         assertEquals("contract_v1", result["contractProfile"]!!.jsonPrimitive.content)
-        assertEquals(4, result["runtimeFloor"]!!.jsonPrimitive.content.toInt())
+        assertEquals(5, result["runtimeFloor"]!!.jsonPrimitive.content.toInt())
         assertEquals(
             setOf(
                 "protocolVersion",

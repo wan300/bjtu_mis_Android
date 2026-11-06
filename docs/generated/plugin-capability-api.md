@@ -22,7 +22,10 @@ SDK calls use camelCase. Read methods return `{ data, meta }`; `meta` contains `
 | `academic.resources@1` | stable | `academic.course_resources.read` | none | 15000 ms | `getCourseResources` |
 | `mail.read@1` | stable | `mail.read` | none | 15000 ms | `listFolders`, `listMessages`, `getMessage` |
 | `campus.request@1` | stable | `campus.request` | none | 15000 ms | `request` |
+| `android.credentials.import@1` | beta | `android.credentials.import` | userGesture | 60000 ms | `import` |
+| `android.background.task@1` | beta | `android.background.task` | none | 60000 ms | `schedule`, `cancel`, `list` |
 | `network.request@1` | beta | `network.request` | none | 15000 ms | `request` |
+| `network.request@2` | beta | `network.request.cookies` | none | 15000 ms | `request` |
 | `storage.kv@2` | beta | `storage.kv` | none | 10000 ms | `get`, `set`, `remove`, `keys`, `usage`, `batch`, `transaction`, `export`, `import` |
 | `storage.blob@1` | beta | `storage.blob` | none | 60000 ms | `put`, `getInfo`, `delete` |
 | `cache.resource@1` | beta | `cache.resource` | none | 60000 ms | `put`, `promote`, `deleteHandle`, `match`, `delete`, `pin`, `usage` |
@@ -32,7 +35,7 @@ SDK calls use camelCase. Read methods return `{ data, meta }`; `meta` contains `
 | `android.packages.read@1` | beta | `android.packages.read` | none | 10000 ms | `list`, `get`, `resolveIntent` |
 | `android.settings.open@1` | beta | `android.settings.open` | none | 5000 ms | `open` |
 | `android.device.info@1` | beta | `android.device.info` | none | 5000 ms | `getInfo` |
-| `android.network.status@1` | beta | `android.network.status` | none | 5000 ms | `getStatus`, `subscribe`, `unsubscribe` |
+| `android.network.status@1` | beta | `android.network.status` | none | 60000 ms | `getAddresses`, `getStatus`, `subscribe`, `unsubscribe` |
 | `android.battery.status@1` | beta | `android.battery.status` | none | 5000 ms | `getStatus`, `subscribe`, `unsubscribe` |
 | `android.haptics.perform@1` | beta | `android.haptics.perform` | none | 5000 ms | `perform` |
 | `android.files.pick@1` | beta | `android.files.pick` | none | 120000 ms | `pick` |
@@ -739,6 +742,432 @@ Response schema:
 
 Errors: `permission_denied`, `request_timeout`, `invalid_request`, `http_error`, `resource_too_large`.
 
+## android.credentials.import@1
+
+undefined：按包名在前台逐次确认应用自行提供的结构化登录态；持续通知，不读取宿主或其他应用私有凭据。
+
+Stability: **beta** · confirmation: **userGesture** · idempotency: **none**
+
+### import
+
+Request schema:
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "packageName",
+    "credentials"
+  ],
+  "properties": {
+    "packageName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$"
+    },
+    "credentials": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "identity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "umid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "userAgent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "cookies": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "value",
+              "domain"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "value": {
+                "type": "string",
+                "maxLength": 8192
+              },
+              "domain": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 253
+              },
+              "path": {
+                "type": "string",
+                "maxLength": 2048
+              },
+              "secure": {
+                "type": "boolean"
+              },
+              "httpOnly": {
+                "type": "boolean"
+              },
+              "expiresAtMs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            }
+          }
+        },
+        "refreshToken": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384
+        }
+      }
+    }
+  }
+}
+```
+
+Response schema:
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "identity": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192
+    },
+    "umid": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192
+    },
+    "userAgent": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "cookies": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "value",
+          "domain"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 8192
+          },
+          "domain": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "secure": {
+            "type": "boolean"
+          },
+          "httpOnly": {
+            "type": "boolean"
+          },
+          "expiresAtMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      }
+    },
+    "refreshToken": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384
+    }
+  }
+}
+```
+
+Errors: `permission_denied`, `request_timeout`, `foreground_required`, `user_cancelled`, `capability_unavailable`, `quota_exceeded`, `invalid_request`.
+
+## android.background.task@1
+
+undefined：持久授权的原生定时回调；前台安排、最长60分钟、持续通知和全部停止，不承诺精确定时或永久存活。
+
+Stability: **beta** · confirmation: **none** · idempotency: **required**
+
+Events: `tick`.
+
+### schedule
+
+Request schema:
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "idempotencyKey",
+    "callbackId",
+    "intervalMs",
+    "maxDurationMs"
+  ],
+  "properties": {
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "callbackId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "intervalMs": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 3600000
+    },
+    "maxDurationMs": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 3600000
+    }
+  }
+}
+```
+
+Response schema:
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "receiptId",
+    "idempotencyKey",
+    "completedAt",
+    "result"
+  ],
+  "properties": {
+    "receiptId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "completedAt": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "callbackId",
+        "intervalMs",
+        "expiresAtMs"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "callbackId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "intervalMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 3600000
+        },
+        "expiresAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  }
+}
+```
+
+Errors: `permission_denied`, `request_timeout`, `foreground_required`, `user_cancelled`, `capability_unavailable`, `quota_exceeded`, `idempotency_conflict`, `invalid_request`.
+
+### cancel
+
+Request schema:
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "idempotencyKey",
+    "taskId"
+  ],
+  "properties": {
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "taskId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    }
+  }
+}
+```
+
+Response schema:
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "receiptId",
+    "idempotencyKey",
+    "completedAt",
+    "result"
+  ],
+  "properties": {
+    "receiptId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "completedAt": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cancelled"
+      ],
+      "properties": {
+        "cancelled": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
+```
+
+Errors: `permission_denied`, `request_timeout`, `idempotency_conflict`.
+
+### list
+
+Request schema:
+
+```json
+{
+  "$ref": "#/schemas/empty"
+}
+```
+
+Response schema:
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tasks"
+  ],
+  "properties": {
+    "tasks": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "taskId",
+          "callbackId",
+          "intervalMs",
+          "expiresAtMs"
+        ],
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "callbackId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "intervalMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 3600000
+          },
+          "expiresAtMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Errors: `permission_denied`, `request_timeout`.
+
 ## network.request@1
 
 通过宿主访问公网：使用不含 Cookie 和宿主认证信息的隔离网络客户端访问已声明来源。
@@ -783,6 +1212,7 @@ Request schema:
         "json",
         "text",
         "formData",
+        "formUrlEncoded",
         "blob"
       ]
     },
@@ -790,6 +1220,118 @@ Request schema:
       "type": "integer",
       "minimum": 1,
       "maximum": 60000
+    }
+  }
+}
+```
+
+Response schema:
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "headers",
+    "bodyType",
+    "finalUrl",
+    "redirects"
+  ],
+  "properties": {
+    "status": {
+      "type": "integer"
+    },
+    "headers": {
+      "type": "object"
+    },
+    "bodyType": {
+      "type": "string",
+      "enum": [
+        "json",
+        "text",
+        "resource"
+      ]
+    },
+    "body": {},
+    "resource": {
+      "$ref": "#/schemas/resourceHandle"
+    },
+    "finalUrl": {
+      "type": "string"
+    },
+    "redirects": {
+      "type": "integer"
+    },
+    "contentType": {
+      "type": "string"
+    }
+  }
+}
+```
+
+Errors: `permission_denied`, `request_timeout`, `origin_denied`, `network_timeout`, `http_error`, `quota_exceeded`, `resource_too_large`, `user_cancelled`.
+
+## network.request@2
+
+使用隔离的公网 Cookie 会话：仅显式 credentials=include 时使用按发布者、插件与精确 origin 隔离的内存 Cookie；不访问宿主 Cookie。
+
+Stability: **beta** · confirmation: **none** · idempotency: **none**
+
+Events: `progress`.
+
+### request
+
+Request schema:
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "url"
+  ],
+  "properties": {
+    "url": {
+      "type": "string"
+    },
+    "method": {
+      "type": "string",
+      "enum": [
+        "GET",
+        "HEAD",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE"
+      ]
+    },
+    "headers": {
+      "type": "object"
+    },
+    "body": {},
+    "bodyType": {
+      "type": "string",
+      "enum": [
+        "json",
+        "text",
+        "formData",
+        "formUrlEncoded",
+        "blob"
+      ]
+    },
+    "timeoutMs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 60000
+    },
+    "credentials": {
+      "type": "string",
+      "enum": [
+        "omit",
+        "include"
+      ],
+      "default": "omit"
     }
   }
 }
@@ -2060,11 +2602,56 @@ Errors: `permission_denied`, `request_timeout`, `capability_unavailable`.
 
 ## android.network.status@1
 
-undefined：读取和订阅最小化网络状态；不返回 SSID、BSSID、MAC 或 IP。
+undefined：读取和订阅最小化网络状态；不返回 SSID、BSSID 或 MAC；地址查询需逐次前台确认。
 
 Stability: **beta** · confirmation: **none** · idempotency: **none**
 
 Events: `changed`.
+
+### getAddresses
+
+Request schema:
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "publicIpUrl": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^https://"
+    }
+  }
+}
+```
+
+Response schema:
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "localIpv4": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 15,
+      "pattern": "^[0-9.]+$"
+    },
+    "publicIp": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 45
+    }
+  }
+}
+```
+
+Errors: `permission_denied`, `request_timeout`, `foreground_required`, `user_cancelled`, `capability_unavailable`, `quota_exceeded`, `origin_denied`, `http_error`, `network_timeout`, `invalid_request`.
 
 ### getStatus
 

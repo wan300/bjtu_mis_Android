@@ -132,3 +132,5 @@ CI 变更范围选择、WebView 实际执行门禁及本地命令见 [tools/ci/R
 - 项目原则以 `.specify/memory/constitution.md` 为权威来源；插件安全策略以 constitution 原则 VII 和 `docs/third-party-services.md` 为准，并覆盖旧 v1/v2 文档。`AGENTS.md` 和 `PLANS.md` 提供代理执行细则与 ExecPlan 模板。
 - 本地 SDK 配置文件 `android/local.properties` 不应提交。
 - Open WebUI 构建产物、Android 构建产物、APK/AAB 和本地缓存均不应提交；仅 `android/app/schemas/` 中用于迁移验证且经审查的 Room schema 历史应随 migration 提交。
+
+插件通用接口已扩展结构化登录态导入、原生限时后台回调、表单编码、显式 IP 查询和隔离 Cookie v2；授权、系统限制与示例见 [第三方插件文档](docs/third-party-services.md)。

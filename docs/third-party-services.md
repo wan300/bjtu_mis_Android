@@ -118,7 +118,7 @@ dist/
 稳定 Capability 覆盖 lifecycle、configuration、remote frame、外部导航、身份、教务、
 邮件读取和只读 `campus.request@1`。beta Capability 包括：
 
-- `network.request@1`
+- `network.request@1` / `network.request@2`
 - `storage.kv@2`
 - `storage.blob@1`
 - `cache.resource@1`
@@ -235,7 +235,7 @@ await bjtu.android.accessibility.actions.performNode({
   runtime、清除订阅并失效 node handle。
 - `network`、`battery` 和 `sensors` 可使用 `persistent: true` 订阅。每插件最多 16 个；
   网络/电池最多 60 events/s，传感器最多 20 Hz。设备和网络信息不包含硬件稳定 ID、
-  SSID、BSSID、MAC 或 IP。
+  SSID、BSSID 或 MAC；IP 仅通过需逐次前台确认的 `getAddresses` 返回。
 - `files`、`media`、`share`、`camera` 和 `biometric` 必须由前台插件页面触发系统 UI；
   后台调用返回 `foreground_required`。文件或媒体只返回隔离加密 Blob handle，永不返回
   raw URI、任意路径或可持续 URI。
@@ -305,7 +305,7 @@ JavaScript/Base64。兼容分片仅用于插件生成的 Blob、元数据备份�
 ## 7. 网络、存储与资源
 
 `network.request@1` 使用无 Cookie、无宿主认证器的独立 OkHttp 客户端。它支持
-GET、HEAD、POST、PUT、PATCH、DELETE，以及 JSON、文本、FormData 和 Blob handle
+GET、HEAD、POST、PUT、PATCH、DELETE，以及 JSON、文本、FormData、formUrlEncoded 和 Blob handle
 请求体。初始请求、每次 DNS 解析和每次重定向都会重新执行 SSRF 检查；`Host`、
 `Cookie`、`Content-Length` 等传输层 header 被拒绝。
 
@@ -472,3 +472,48 @@ getStatus 的 active/serviceState 表示当前状态：stopped、pending、runni
 过期或不属于自己的租约续租返回 lease_not_found。接口不接受任意 URL、token、purpose 文本或 Cookie。
 
 执行计划与验证状态见 [保活 ExecPlan](plugin-session-keepalive-execplan.md)。
+
+
+## 通用接口扩展（constitution 3.3.0，runtime 5）
+
+下列接口适用于所有声明并获授权的 contract_v1 插件，不绑定具体插件。
+
+| 请求 | 当前支持 |
+| --- | --- |
+| credentials.capture / import | `android.credentials.import@1`，应用自行取得登录态后导入，宿主不抓包、不读取其他应用私有数据 |
+| 原生后台定时 | `android.background.task@1`，schedule/cancel/list/onTick |
+| 表单编码 | `network.request@1` 与 `@2` 的 `bodyType: 'formUrlEncoded'`，body 为字符串值对象 |
+| 网络 IP | `android.network.status@1#getAddresses` 返回可用的 localIpv4/publicIp；普通 getStatus 和 changed 不含 IP |
+| OAID/MAC | 尚不支持：MAC 受 Android 系统特权限制；OAID 需另行接入官方 SDK/证书，仓库当前没有该依赖，不以假值或空壳 API 宣称支持 |
+| per-origin Cookie | `network.request@2`，独立授权，显式 credentials=include，内存会话、进程退出不保留 |
+| origins.connect 通配 | 保持精确 HTTPS origin；固定 OSS bucket 无需通配，并非本次闭环阻断项 |
+
+```ts
+await bjtu.android.credentials.import({
+  packageName: 'com.example.app',
+  credentials: { identity: 'application-supplied-user', umid: 'application-supplied-umid' }
+});
+await bjtu.network.request({
+  url: 'https://api.example.com/form', method: 'POST',
+  bodyType: 'formUrlEncoded', body: { name: '交大 +&', empty: '' }
+});
+const addresses = await bjtu.android.network.getAddresses({ publicIpUrl: 'https://api.example.com/ip' });
+await bjtu.network.requestWithCookies({ url: 'https://api.example.com/session', credentials: 'include' });
+bjtu.android.background.task.onTick(({ callbackId }) => {
+  if (callbackId === 'sync') void synchronizeApplicationData();
+});
+const receipt = await bjtu.android.background.task.schedule({
+  idempotencyKey: crypto.randomUUID(), callbackId: 'sync', intervalMs: 30_000, maxDurationMs: 3_600_000
+});
+await bjtu.android.background.task.cancel({ idempotencyKey: crypto.randomUUID(), taskId: receipt.result.taskId });
+```
+
+登录态导入只接收 identity、umid、userAgent、cookies、refreshToken 白名单；identity 为应用定义的字符串，cookies 为带 name/value/domain 的结构化数组。请求和响应总量最多 256 KiB、最多 128 个 Cookie。宿主按插件名和包名逐次前台确认，等待确认时持续通知，拒绝校园 Cookie 和宿主包名，不保存敏感回执。登录态获取、刷新和插件自身加密保存由应用实现。此 API 不授予跨应用抓包、VPN、root、Shell 或任意系统权限。
+
+地址查询需可见前台和逐次确认；每插件最多 6 次/分钟。公网地址不会默认外联：只有传入 publicIpUrl 才访问插件已声明的 HTTPS origin，要求额外授权 network.request@1，复用无 Cookie 的隔离网络 provider 与全部 SSRF/重定向限制；endpoint 必须返回纯文本 IP。未连接 IPv4 网络时 localIpv4 缺省，未请求公网查询时 publicIp 缺省。
+
+原生任务最多 4 项/插件，间隔至少 1 秒且不得超过有效期，每次安排最多 60 分钟，每分钟最多 6 次安排。任务、原始期限和请求摘要加密保存；重复 key 不延长期限，取消后重放不重启。原生事件只交给本插件且前台 runtime 优先，不重复派发，不补发积压；进程恢复只在可见 Activity 下重新申请 FGS，不绕过通知、FGS、Doze 或系统限制，不保证精确唤醒。重启、时钟回退、到期、用户全部停止、系统服务终止、复审/撤销、更新/回滚、删除和登出均失效。
+
+Cookie v2 只接受同 host 的 Cookie，按完整 scheme+host+port、publisher 和 plugin 分区；父域 Cookie、跨源共享、宿主 Cookie、手工 Cookie header 和 Set-Cookie 响应头暴露均不允许。每 origin 最多 128 Cookie、每插件最多 32 origin。更新、停止、撤销和登出清除会话，v1 始终无 Cookie。浏览器 DOM Cookie/第三方 Cookie 和远程 frame 桥接规则保持原有边界。
+
+系统依据：[Android 标识符文档](https://developer.android.com/identity/user-data-ids)、[移动安全联盟 OAID SDK](https://www.msa-alliance.cn/mProtocol.jsp)。
