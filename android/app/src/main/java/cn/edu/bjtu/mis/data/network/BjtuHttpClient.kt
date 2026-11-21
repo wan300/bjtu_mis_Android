@@ -1,5 +1,6 @@
 package cn.edu.bjtu.mis.data.network
 
+import android.content.Context
 import cn.edu.bjtu.mis.data.AppJson
 import cn.edu.bjtu.mis.data.perf.PerfTrace
 import kotlinx.coroutines.Dispatchers
@@ -54,6 +55,7 @@ class BjtuHttpClient(
     val cookieJar: AppCookieJar,
     userAgent: String = DEFAULT_USER_AGENT,
     dns: BjtuDns = BjtuDns(),
+    context: Context? = null,
 ) {
     val client: OkHttpClient = OkHttpClient.Builder()
         .cookieJar(cookieJar)
@@ -70,6 +72,7 @@ class BjtuHttpClient(
             chain.proceed(request)
         }
         .build()
+        .let { if (context == null) it else it.withMisIntermediate(context) }
 
     private val noRedirectClient: OkHttpClient by lazy {
         client.newBuilder()

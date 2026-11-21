@@ -38,8 +38,8 @@ MIS 或 AA 返回认证页时会判定会话已过期，不会将认证页 HTTP 
 .\gradlew.bat assembleDebug
 ```
 
-正式版本当前为 `v1.4.4`（`versionCode = 11`），更新内容见
-[v1.4.4 更新说明](../docs/release-notes-v1.4.4.md)。构建 Release 前，将
+此源码构建的版本为 `v1.4.5`（`versionCode = 12`），更新内容见
+[v1.4.5 更新说明](../docs/release-notes-v1.4.5.md)。构建 Release 前，将
 `release-signing.properties.example` 复制为本机的 `release-signing.properties`，
 并填写 `v1.3.1` 使用的原 keystore、alias 和口令：
 

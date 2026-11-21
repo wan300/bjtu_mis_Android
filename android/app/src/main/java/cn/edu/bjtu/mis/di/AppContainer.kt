@@ -120,7 +120,7 @@ class AppContainer(context: Context) {
     private val cookieStore = SecureCookieStore(appContext)
     private val credentialStore = SecureCredentialStore(appContext)
     private val captchaSolver = TorchScriptCaptchaSolver(appContext)
-    val httpClient = BjtuHttpClient(cookieJar)
+    val httpClient = BjtuHttpClient(cookieJar, context = appContext)
     val appUpdateChecker = AppUpdateChecker(
         client = httpClient,
         currentVersionProvider = { appContext.installedVersionName() },
