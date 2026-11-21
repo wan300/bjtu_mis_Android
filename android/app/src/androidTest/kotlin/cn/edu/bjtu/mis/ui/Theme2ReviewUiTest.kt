@@ -26,12 +26,15 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.text.TextLayoutResult
@@ -130,8 +133,10 @@ class Theme2ReviewUiTest {
     @Test
     fun effectSwitchesExposeTheirPurpose() {
         showTheme { ThemeSettings() }
+        val settings = composeRule.onNode(hasScrollToIndexAction())
         listOf("减少动态效果", "降低透明效果").forEach { label ->
-            composeRule.onNodeWithContentDescription(label).performScrollTo().assertIsDisplayed()
+            settings.performScrollToNode(hasContentDescription(label))
+            composeRule.onNodeWithContentDescription(label).assertIsDisplayed()
         }
         saveScreenshot("effect-switches")
     }
