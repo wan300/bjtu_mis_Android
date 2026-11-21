@@ -114,6 +114,8 @@ jobs:
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      ONNXRUNTIME_NODE_INSTALL_CUDA: skip
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -214,6 +216,8 @@ jobs:
     if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      ONNXRUNTIME_NODE_INSTALL_CUDA: skip
     strategy:
       fail-fast: false
       matrix:
